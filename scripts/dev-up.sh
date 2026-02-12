@@ -26,7 +26,7 @@ wp_cli() {
 prepare_wordpress_fs() {
   compose exec -T wordpress sh -lc '
     mkdir -p /var/www/html/wp-content/uploads /var/www/html/wp-content/upgrade &&
-    chown -R www-data:www-data /var/www/html/wp-content
+    chown -R www-data:www-data /var/www/html/wp-content/uploads /var/www/html/wp-content/upgrade
   '
 }
 
