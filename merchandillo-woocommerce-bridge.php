@@ -20,7 +20,7 @@ define('MERCHANDILLO_WC_BRIDGE_VERSION', '0.1.0');
 define('MERCHANDILLO_WC_BRIDGE_FILE', __FILE__);
 define('MERCHANDILLO_WC_BRIDGE_DIR', plugin_dir_path(__FILE__));
 
-require_once MERCHANDILLO_WC_BRIDGE_DIR . 'includes/class-merchandillo-woocommerce-bridge.php';
+require_once MERCHANDILLO_WC_BRIDGE_DIR . 'includes/bootstrap.php';
 
 register_activation_hook(MERCHANDILLO_WC_BRIDGE_FILE, ['Merchandillo_WooCommerce_Bridge', 'activate']);
 register_deactivation_hook(MERCHANDILLO_WC_BRIDGE_FILE, ['Merchandillo_WooCommerce_Bridge', 'deactivate']);
