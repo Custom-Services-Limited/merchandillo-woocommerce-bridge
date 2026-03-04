@@ -47,48 +47,8 @@ jobs:
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
 
-      - name: Determine release gate
-        id: gate
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event_name }}" != "push" ]]; then
-            echo "should_release=true" >> "${GITHUB_OUTPUT}"
-            echo "reason=manual-dispatch" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-
-          BEFORE="${{ github.event.before }}"
-          CURRENT_VERSION="${{ steps.version.outputs.version }}"
-
-          if [[ -z "${BEFORE}" || "${BEFORE}" == "0000000000000000000000000000000000000000" ]]; then
-            echo "should_release=true" >> "${GITHUB_OUTPUT}"
-            echo "reason=missing-before-sha" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-
-          if git cat-file -e "${BEFORE}:merchandillo-woocommerce-bridge.php" 2>/dev/null; then
-            PREVIOUS_VERSION="$(git show "${BEFORE}:merchandillo-woocommerce-bridge.php" | sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([^[:space:]]+).*/\1/p' | head -n 1)"
-            if [[ -n "${PREVIOUS_VERSION}" && "${PREVIOUS_VERSION}" == "${CURRENT_VERSION}" ]]; then
-              echo "should_release=false" >> "${GITHUB_OUTPUT}"
-              echo "reason=version-unchanged" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
-          fi
-
-          echo "should_release=true" >> "${GITHUB_OUTPUT}"
-          echo "reason=version-changed" >> "${GITHUB_OUTPUT}"
-
-      - name: Stop if release is not needed
-        if: steps.gate.outputs.should_release != 'true'
-        shell: bash
-        run: |
-          echo "Skipping release because plugin header version did not change on push."
-
       - name: Check release state
         id: state
-        if: steps.gate.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -126,15 +86,23 @@ jobs:
           echo "asset_exists=${ASSET_EXISTS}" >> "${GITHUB_OUTPUT}"
           echo "asset_name=${ASSET_NAME}" >> "${GITHUB_OUTPUT}"
 
-      - name: Stop if release and ZIP asset already exist
-        if: steps.gate.outputs.should_release == 'true' && steps.state.outputs.release_exists == 'true' && steps.state.outputs.asset_exists == 'true'
+          if [[ "${RELEASE_EXISTS}" == "true" ]]; then
+            echo "should_release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=release-already-exists" >> "${GITHUB_OUTPUT}"
+          else
+            echo "should_release=true" >> "${GITHUB_OUTPUT}"
+            echo "reason=release-missing-for-plugin-version" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Stop if release is not needed
+        if: steps.state.outputs.should_release != 'true'
         shell: bash
         run: |
-          echo "Release and ZIP asset already exist for ${{ steps.version.outputs.tag }}. Nothing to do."
+          echo "Skipping release because plugin header version release already exists."
 
       - name: Build release ZIP
         id: package
-        if: steps.gate.outputs.should_release == 'true' && (steps.state.outputs.release_exists != 'true' || steps.state.outputs.asset_exists != 'true')
+        if: steps.state.outputs.should_release == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -151,7 +119,7 @@ jobs:
           echo "zip_path=${ZIP_PATH}" >> "${GITHUB_OUTPUT}"
 
       - name: Verify ZIP exclusions
-        if: steps.gate.outputs.should_release == 'true' && (steps.state.outputs.release_exists != 'true' || steps.state.outputs.asset_exists != 'true')
+        if: steps.state.outputs.should_release == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -166,7 +134,7 @@ jobs:
           fi
 
       - name: Create GitHub release
-        if: steps.gate.outputs.should_release == 'true' && steps.state.outputs.release_exists != 'true'
+        if: steps.state.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -184,18 +152,6 @@ jobs:
             gh release create "${TAG}" "${ZIP_PATH}" --title "${TAG}" --notes "${NOTES}" --target "${{ github.sha }}"
           fi
 
-      - name: Upload ZIP asset to existing release if missing
-        if: steps.gate.outputs.should_release == 'true' && steps.state.outputs.release_exists == 'true' && steps.state.outputs.asset_exists != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          TAG="${{ steps.version.outputs.tag }}"
-          ZIP_PATH="${{ steps.package.outputs.zip_path }}"
-          gh release upload "${TAG}" "${ZIP_PATH}" --clobber
-
       - name: Workflow summary
         if: always()
         shell: bash
@@ -205,8 +161,8 @@ jobs:
             echo
             echo "- Version: \`${{ steps.version.outputs.version }}\`"
             echo "- Tag: \`${{ steps.version.outputs.tag }}\`"
-            echo "- Gate reason: \`${{ steps.gate.outputs.reason }}\`"
-            echo "- Should release: \`${{ steps.gate.outputs.should_release }}\`"
+            echo "- Gate reason: \`${{ steps.state.outputs.reason }}\`"
+            echo "- Should release: \`${{ steps.state.outputs.should_release }}\`"
             echo "- Tag exists: \`${{ steps.state.outputs.tag_exists }}\`"
             echo "- Release exists: \`${{ steps.state.outputs.release_exists }}\`"
             echo "- ZIP asset exists: \`${{ steps.state.outputs.asset_exists }}\`"
