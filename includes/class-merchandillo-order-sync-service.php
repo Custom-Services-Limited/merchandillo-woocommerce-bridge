@@ -88,6 +88,7 @@ final class Merchandillo_Order_Sync_Service
         }
 
         $endpoint = rtrim((string) $settings['api_base_url'], '/') . '/api/woocommerce/orders';
+        $rejectUnsafeUrls = !$this->is_local_dev_endpoint($endpoint);
 
         $payload = $this->payloadBuilder->build($order);
 
@@ -97,7 +98,7 @@ final class Merchandillo_Order_Sync_Service
                 'method' => 'POST',
                 'timeout' => 15,
                 'redirection' => 0,
-                'reject_unsafe_urls' => true,
+                'reject_unsafe_urls' => $rejectUnsafeUrls,
                 'headers' => [
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
@@ -144,5 +145,18 @@ final class Merchandillo_Order_Sync_Service
     {
         return defined('MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY')
             && true === MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY;
+    }
+
+    private function is_local_dev_endpoint(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        return 'http' === $scheme && in_array($host, ['localhost', 'host.docker.internal'], true);
     }
 }

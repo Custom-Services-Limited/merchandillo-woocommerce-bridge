@@ -253,6 +253,44 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertSame('http://host.docker.internal:8787', $sanitized['api_base_url']);
     }
 
+    public function test_sanitize_settings_maps_merchandillo_mode_to_fixed_endpoint(): void
+    {
+        $bridge = $this->newBridge();
+
+        $sanitized = $bridge->sanitize_settings(
+            [
+                'enabled' => '1',
+                'api_base_url_mode' => 'merchandillo_com',
+                'api_base_url_local' => 'http://localhost:8787',
+                'api_key' => 'k',
+                'api_secret' => 's',
+                'ui_language' => 'en',
+                'log_errors' => '1',
+            ]
+        );
+
+        $this->assertSame('https://data.merchandillo.com', $sanitized['api_base_url']);
+    }
+
+    public function test_sanitize_settings_maps_local_dev_mode_to_local_url(): void
+    {
+        $bridge = $this->newBridge();
+
+        $sanitized = $bridge->sanitize_settings(
+            [
+                'enabled' => '1',
+                'api_base_url_mode' => 'local_dev',
+                'api_base_url_local' => 'http://localhost:8899',
+                'api_key' => 'k',
+                'api_secret' => 's',
+                'ui_language' => 'en',
+                'log_errors' => '1',
+            ]
+        );
+
+        $this->assertSame('http://localhost:8899', $sanitized['api_base_url']);
+    }
+
     public function test_add_settings_link_appends_plugin_settings_link(): void
     {
         $bridge = $this->newBridge();

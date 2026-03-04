@@ -105,6 +105,32 @@ final class MerchandilloSyncAndPayloadTest extends MerchandilloTestCase
         $this->assertStringNotContainsString('"response_body":', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
     }
 
+    public function test_sync_order_now_allows_local_dev_endpoint_by_disabling_reject_unsafe_urls(): void
+    {
+        $bridge = $this->newBridge();
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
+            'enabled' => '1',
+            'api_base_url' => 'http://host.docker.internal:8787',
+            'api_key' => 'key',
+            'api_secret' => 'secret',
+            'log_errors' => '1',
+        ];
+        $GLOBALS['mwb_test_state']['wc_get_order_return'] = $this->buildSampleOrder(58);
+        $GLOBALS['mwb_test_state']['remote_post_response'] = [
+            'response' => ['code' => 200],
+            'body' => '',
+        ];
+
+        $bridge->sync_order_now(58);
+
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['remote_post_requests']);
+        $this->assertSame(
+            'http://host.docker.internal:8787/api/woocommerce/orders',
+            $GLOBALS['mwb_test_state']['remote_post_requests'][0][0]
+        );
+        $this->assertSame(false, $GLOBALS['mwb_test_state']['remote_post_requests'][0][1]['reject_unsafe_urls']);
+    }
+
     public function test_sync_order_now_logs_error_when_remote_returns_wp_error(): void
     {
         $bridge = $this->newBridge();

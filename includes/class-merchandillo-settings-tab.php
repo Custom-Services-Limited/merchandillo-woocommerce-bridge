@@ -117,10 +117,24 @@ final class Merchandillo_Settings_Tab
     {
         $settings = $this->settings->get();
         $value = (string) $settings['api_base_url'];
+        $isLocalDev = 0 === strpos($value, 'http://localhost:') || 0 === strpos($value, 'http://host.docker.internal:');
+        $mode = $isLocalDev ? 'local_dev' : 'merchandillo_com';
+        $localDevValue = $isLocalDev ? $value : 'http://localhost:8787';
+        $fieldNamePrefix = $this->settings->option_name();
 
-        echo '<input type="url" class="regular-text code mwb-input" name="' . esc_attr($this->settings->option_name()) . '[api_base_url]" value="' . esc_attr($value) . '" placeholder="https://data.merchandillo.com" />';
-        echo '<p class="description mwb-help">' . esc_html__('Example: https://data.merchandillo.com', 'merchandillo-woocommerce-bridge') . '</p>';
-        echo '<p class="description mwb-help">' . esc_html__('Allowed values: https://data.merchandillo.com, http://host.docker.internal:{port}, http://localhost:{port}', 'merchandillo-woocommerce-bridge') . '</p>';
+        echo '<select id="mwb-api-base-url-mode" class="mwb-input mwb-select" name="' . esc_attr($fieldNamePrefix) . '[api_base_url_mode]">';
+        echo '<option value="local_dev"' . selected($mode, 'local_dev', false) . '>' . esc_html__('Local Dev', 'merchandillo-woocommerce-bridge') . '</option>';
+        echo '<option value="merchandillo_com"' . selected($mode, 'merchandillo_com', false) . '>' . esc_html__('merchandillo.com', 'merchandillo-woocommerce-bridge') . '</option>';
+        echo '</select>';
+
+        $localStyle = 'local_dev' === $mode ? '' : ' style="display:none;"';
+        echo '<div id="mwb-api-base-url-local-wrap"' . $localStyle . '>';
+        echo '<label for="mwb-api-base-url-local" class="mwb-label">' . esc_html__('Local Dev URL', 'merchandillo-woocommerce-bridge') . '</label>';
+        echo '<input id="mwb-api-base-url-local" type="url" class="regular-text code mwb-input" name="' . esc_attr($fieldNamePrefix) . '[api_base_url_local]" value="' . esc_attr($localDevValue) . '" placeholder="http://localhost:8787" />';
+        echo '<p class="description mwb-help">' . esc_html__('Example: http://localhost:8787', 'merchandillo-woocommerce-bridge') . '</p>';
+        echo '</div>';
+
+        echo '<script>(function(){var mode=document.getElementById("mwb-api-base-url-mode");var localWrap=document.getElementById("mwb-api-base-url-local-wrap");if(!mode||!localWrap){return;}function sync(){localWrap.style.display=(mode.value==="local_dev")?"":"none";}mode.addEventListener("change",sync);sync();})();</script>';
     }
 
     public function render_api_key_field(): void

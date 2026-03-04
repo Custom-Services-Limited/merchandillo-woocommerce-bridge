@@ -43,12 +43,13 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
             'X-API-Key' => (string) $settings['api_key'],
             'X-API-Secret' => (string) $settings['api_secret'],
         ];
+        $rejectUnsafeUrls = !$this->is_local_dev_endpoint($endpoint);
         $response = wp_remote_get(
             $requestEndpoint,
             [
                 'timeout' => 15,
                 'redirection' => 0,
-                'reject_unsafe_urls' => true,
+                'reject_unsafe_urls' => $rejectUnsafeUrls,
                 'headers' => $requestHeaders,
             ]
         );
@@ -134,5 +135,18 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
     {
         return defined('MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY')
             && true === MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY;
+    }
+
+    private function is_local_dev_endpoint(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        return 'http' === $scheme && in_array($host, ['localhost', 'host.docker.internal'], true);
     }
 }

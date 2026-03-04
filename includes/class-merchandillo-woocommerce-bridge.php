@@ -434,12 +434,13 @@ final class Merchandillo_WooCommerce_Bridge
                 ],
                 $endpoint
             );
+            $rejectUnsafeUrls = !$this->is_local_dev_endpoint($endpoint);
             $response = wp_remote_get(
                 $requestEndpoint,
                 [
                     'timeout' => 20,
                     'redirection' => 0,
-                    'reject_unsafe_urls' => true,
+                    'reject_unsafe_urls' => $rejectUnsafeUrls,
                     'headers' => [
                         'Accept' => 'application/json',
                         'X-API-Key' => (string) $settings['api_key'],
@@ -753,13 +754,14 @@ final class Merchandillo_WooCommerce_Bridge
         $settings = $context['settings'];
         $payload = $context['payload'];
         $endpoint = rtrim((string) $settings['api_base_url'], '/') . '/api/woocommerce/orders';
+        $rejectUnsafeUrls = !$this->is_local_dev_endpoint($endpoint);
         $response = wp_remote_post(
             $endpoint,
             [
                 'method' => 'POST',
                 'timeout' => 20,
                 'redirection' => 0,
-                'reject_unsafe_urls' => true,
+                'reject_unsafe_urls' => $rejectUnsafeUrls,
                 'headers' => [
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
@@ -911,6 +913,19 @@ final class Merchandillo_WooCommerce_Bridge
         return '' !== (string) $settings['api_base_url']
             && '' !== (string) $settings['api_key']
             && '' !== (string) $settings['api_secret'];
+    }
+
+    private function is_local_dev_endpoint(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        return 'http' === $scheme && in_array($host, ['localhost', 'host.docker.internal'], true);
     }
 
     private function manual_push_redirect_url(int $orderId): string

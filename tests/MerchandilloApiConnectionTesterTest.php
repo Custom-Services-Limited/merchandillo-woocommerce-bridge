@@ -58,6 +58,28 @@ final class MerchandilloApiConnectionTesterTest extends MerchandilloTestCase
         $this->assertStringNotContainsString('"response_body":', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
     }
 
+    public function test_run_allows_local_dev_endpoint_by_disabling_reject_unsafe_urls(): void
+    {
+        $tester = $this->newApiConnectionTester();
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
+            'enabled' => '1',
+            'api_base_url' => 'http://localhost:8787',
+            'api_key' => 'key',
+            'api_secret' => 'secret',
+            'log_errors' => '1',
+        ];
+        $GLOBALS['mwb_test_state']['remote_get_response'] = [
+            'response' => ['code' => 200],
+            'body' => '{}',
+        ];
+
+        $result = $tester->run();
+
+        $this->assertSame(true, $result['ok']);
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['remote_get_requests']);
+        $this->assertSame(false, $GLOBALS['mwb_test_state']['remote_get_requests'][0][1]['reject_unsafe_urls']);
+    }
+
     public function test_run_returns_unauthorized_when_credentials_rejected(): void
     {
         $tester = $this->newApiConnectionTester();

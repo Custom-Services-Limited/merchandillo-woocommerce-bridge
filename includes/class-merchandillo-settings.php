@@ -2,6 +2,10 @@
 
 final class Merchandillo_Settings implements Merchandillo_Settings_Interface
 {
+    private const API_BASE_URL_MODE_LOCAL_DEV = 'local_dev';
+    private const API_BASE_URL_MODE_MERCHANDILLO = 'merchandillo_com';
+    private const MERCHANDILLO_API_BASE_URL = 'https://data.merchandillo.com';
+
     /** @var string */
     private $optionName;
 
@@ -17,7 +21,7 @@ final class Merchandillo_Settings implements Merchandillo_Settings_Interface
     {
         return [
             'enabled' => '1',
-            'api_base_url' => 'https://data.merchandillo.com',
+            'api_base_url' => self::MERCHANDILLO_API_BASE_URL,
             'api_key' => '',
             'api_secret' => '',
             'ui_language' => 'en',
@@ -63,25 +67,44 @@ final class Merchandillo_Settings implements Merchandillo_Settings_Interface
         $existing = $this->get();
         $incoming = is_array($input) ? $input : [];
 
-        $incomingApiBaseUrl = trim((string) ($incoming['api_base_url'] ?? ''));
-        $apiBaseUrl = $this->sanitize_api_base_url($incomingApiBaseUrl);
-        if ('' === $apiBaseUrl && '' !== $incomingApiBaseUrl) {
-            $fallbackApiBaseUrl = $this->sanitize_api_base_url((string) ($existing['api_base_url'] ?? ''));
-            if ('' === $fallbackApiBaseUrl) {
-                $fallbackApiBaseUrl = (string) $this->defaults()['api_base_url'];
-            }
-            $apiBaseUrl = $fallbackApiBaseUrl;
+        $incomingMode = isset($incoming['api_base_url_mode'])
+            ? sanitize_key((string) $incoming['api_base_url_mode'])
+            : '';
+        if ('' === $incomingMode && isset($incoming['api_base_url'])) {
+            $incomingMode = $this->detect_api_base_url_mode((string) $incoming['api_base_url']);
+        }
+        if (!in_array($incomingMode, [self::API_BASE_URL_MODE_LOCAL_DEV, self::API_BASE_URL_MODE_MERCHANDILLO], true)) {
+            $incomingMode = $this->detect_api_base_url_mode((string) ($existing['api_base_url'] ?? ''));
+        }
 
-            if (function_exists('add_settings_error')) {
-                add_settings_error(
-                    $this->optionName,
-                    'invalid_api_base_url',
-                    __(
-                        'API Base URL must be one of: https://data.merchandillo.com, http://host.docker.internal:{port}, or http://localhost:{port}.',
-                        'merchandillo-woocommerce-bridge'
-                    ),
-                    'error'
-                );
+        if (self::API_BASE_URL_MODE_MERCHANDILLO === $incomingMode) {
+            $apiBaseUrl = self::MERCHANDILLO_API_BASE_URL;
+        } else {
+            $incomingLocalUrl = trim((string) ($incoming['api_base_url_local'] ?? ''));
+            if ('' === $incomingLocalUrl && isset($incoming['api_base_url'])) {
+                // Backwards compatibility with older settings forms.
+                $incomingLocalUrl = trim((string) $incoming['api_base_url']);
+            }
+            if ('' === $incomingLocalUrl && $this->is_local_dev_api_base_url((string) ($existing['api_base_url'] ?? ''))) {
+                $incomingLocalUrl = (string) $existing['api_base_url'];
+            }
+
+            $apiBaseUrl = $this->sanitize_local_dev_api_base_url($incomingLocalUrl);
+            if ('' === $apiBaseUrl) {
+                $fallbackLocalUrl = $this->sanitize_local_dev_api_base_url((string) ($existing['api_base_url'] ?? ''));
+                $apiBaseUrl = '' !== $fallbackLocalUrl ? $fallbackLocalUrl : 'http://localhost:8787';
+
+                if (function_exists('add_settings_error')) {
+                    add_settings_error(
+                        $this->optionName,
+                        'invalid_local_api_base_url',
+                        __(
+                            'Local Dev URL must be in the format http://host.docker.internal:{port} or http://localhost:{port}.',
+                            'merchandillo-woocommerce-bridge'
+                        ),
+                        'error'
+                    );
+                }
             }
         }
 
@@ -110,7 +133,19 @@ final class Merchandillo_Settings implements Merchandillo_Settings_Interface
         ];
     }
 
-    private function sanitize_api_base_url(string $value): string
+    private function detect_api_base_url_mode(string $url): string
+    {
+        return $this->is_local_dev_api_base_url($url)
+            ? self::API_BASE_URL_MODE_LOCAL_DEV
+            : self::API_BASE_URL_MODE_MERCHANDILLO;
+    }
+
+    private function is_local_dev_api_base_url(string $value): bool
+    {
+        return '' !== $this->sanitize_local_dev_api_base_url($value);
+    }
+
+    private function sanitize_local_dev_api_base_url(string $value): string
     {
         $value = esc_url_raw(trim($value));
         if ('' === $value) {
@@ -131,13 +166,6 @@ final class Merchandillo_Settings implements Merchandillo_Settings_Interface
         }
         if ('' !== $path && '/' !== $path) {
             return '';
-        }
-
-        if ('https' === $scheme && 'data.merchandillo.com' === $host) {
-            if (isset($parts['port']) && 443 !== (int) $parts['port']) {
-                return '';
-            }
-            return 'https://data.merchandillo.com';
         }
 
         if ('http' === $scheme && in_array($host, ['host.docker.internal', 'localhost'], true)) {

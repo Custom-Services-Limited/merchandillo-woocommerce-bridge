@@ -270,9 +270,19 @@
 }
 
 .mwb-admin .mwb-log-table {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+    box-sizing: border-box;
     border: 1px solid var(--mwb-border);
     border-radius: 12px;
     overflow: hidden;
+}
+
+.mwb-admin .mwb-log-table th,
+.mwb-admin .mwb-log-table td {
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .mwb-admin .mwb-log-table th {
@@ -294,7 +304,8 @@
     margin: 8px 0 0;
     padding: 10px 12px;
     width: 100%;
-    max-width: 600px;
+    max-width: 100%;
+    box-sizing: border-box;
     max-height: 220px;
     overflow-x: auto;
     overflow-y: auto;

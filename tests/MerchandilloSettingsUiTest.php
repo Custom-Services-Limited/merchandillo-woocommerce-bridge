@@ -40,7 +40,7 @@ final class MerchandilloSettingsUiTest extends MerchandilloTestCase
         $settingsTab = $this->newSettingsTab();
         $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
             'enabled' => '1',
-            'api_base_url' => 'https://api.example.test',
+            'api_base_url' => 'http://localhost:8787',
             'api_key' => '',
             'api_secret' => '',
             'ui_language' => 'en',
@@ -51,7 +51,33 @@ final class MerchandilloSettingsUiTest extends MerchandilloTestCase
         $settingsTab->render_api_base_url_field();
         $output = (string) ob_get_clean();
 
-        $this->assertStringContainsString('https://api.example.test', $output);
+        $this->assertStringContainsString('name="merchandillo_sync_options[api_base_url_mode]"', $output);
+        $this->assertStringContainsString('Local Dev', $output);
+        $this->assertStringContainsString('merchandillo.com', $output);
+        $this->assertStringContainsString('name="merchandillo_sync_options[api_base_url_local]"', $output);
+        $this->assertStringContainsString('http://localhost:8787', $output);
+        $this->assertStringContainsString('selected="selected"', $output);
+        $this->assertStringNotContainsString('Allowed values: https://data.merchandillo.com, http://host.docker.internal:{port}, http://localhost:{port}', $output);
+    }
+
+    public function test_settings_tab_hides_local_dev_url_input_when_merchandillo_mode_selected(): void
+    {
+        $settingsTab = $this->newSettingsTab();
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
+            'enabled' => '1',
+            'api_base_url' => 'https://data.merchandillo.com',
+            'api_key' => '',
+            'api_secret' => '',
+            'ui_language' => 'en',
+            'log_errors' => '1',
+        ];
+
+        ob_start();
+        $settingsTab->render_api_base_url_field();
+        $output = (string) ob_get_clean();
+
+        $this->assertStringContainsString('id="mwb-api-base-url-local-wrap" style="display:none;"', $output);
+        $this->assertStringContainsString('name="merchandillo_sync_options[api_base_url_mode]"', $output);
     }
 
     public function test_settings_tab_renders_api_key_field(): void
