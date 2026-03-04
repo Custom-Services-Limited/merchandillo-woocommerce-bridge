@@ -260,4 +260,24 @@ final class MerchandilloSettingsUiTest extends MerchandilloTestCase
         $this->assertStringContainsString('notice-error', $output);
         $this->assertStringContainsString('API connection test could not run because API settings are incomplete', $output);
     }
+
+    public function test_render_settings_page_uses_stored_api_test_result_when_query_args_missing(): void
+    {
+        $bridge = $this->newBridge();
+        $_GET = [
+            'tab' => 'settings',
+        ];
+        $GLOBALS['mwb_test_state']['options']['merchandillo_api_test_result_0'] = [
+            'api_test_result' => 'success',
+            'api_test_http_status' => '200',
+        ];
+
+        ob_start();
+        $bridge->render_settings_page();
+        $output = (string) ob_get_clean();
+
+        $this->assertStringContainsString('notice-success', $output);
+        $this->assertStringContainsString('API connection test succeeded', $output);
+        $this->assertSame([], $GLOBALS['mwb_test_state']['options']['merchandillo_api_test_result_0']);
+    }
 }

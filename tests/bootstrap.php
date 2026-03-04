@@ -36,6 +36,8 @@ if (!function_exists('mwb_test_default_state')) {
             'enqueued_styles' => [],
             'remote_post_response' => ['response' => ['code' => 200], 'body' => ''],
             'remote_post_requests' => [],
+            'remote_get_response' => ['response' => ['code' => 200], 'body' => ''],
+            'remote_get_requests' => [],
             'wc_get_order_return' => null,
             'last_redirect' => null,
             'nonce_checks' => [],
@@ -923,6 +925,24 @@ if (!function_exists('wp_remote_post')) {
         $GLOBALS['mwb_test_state']['remote_post_requests'][] = [$url, $args];
 
         $response = $GLOBALS['mwb_test_state']['remote_post_response'];
+        if (is_callable($response)) {
+            return $response($url, $args);
+        }
+
+        return $response;
+    }
+}
+
+if (!function_exists('wp_remote_get')) {
+    /**
+     * @param array<string,mixed> $args
+     * @return mixed
+     */
+    function wp_remote_get(string $url, array $args = [])
+    {
+        $GLOBALS['mwb_test_state']['remote_get_requests'][] = [$url, $args];
+
+        $response = $GLOBALS['mwb_test_state']['remote_get_response'];
         if (is_callable($response)) {
             return $response($url, $args);
         }

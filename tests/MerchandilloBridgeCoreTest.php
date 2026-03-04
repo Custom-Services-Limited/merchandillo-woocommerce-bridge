@@ -18,6 +18,8 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertContains('plugins_loaded', $actionHooks);
         $this->assertContains('admin_menu', $actionHooks);
         $this->assertContains('admin_init', $actionHooks);
+        $this->assertContains('admin_action_merchandillo_push_order', $actionHooks);
+        $this->assertContains('admin_notices', $actionHooks);
         $this->assertContains('admin_enqueue_scripts', $actionHooks);
         $this->assertContains('merchandillo_sync_order_event', $actionHooks);
 
@@ -92,6 +94,81 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertContains('woocommerce_new_order', $hooks);
         $this->assertContains('woocommerce_update_order', $hooks);
         $this->assertContains('woocommerce_order_status_changed', $hooks);
+        $this->assertContains('woocommerce_order_item_add_action_buttons', $hooks);
+    }
+
+    public function test_render_order_push_button_outputs_action_link(): void
+    {
+        $bridge = $this->newBridge();
+        $order = $this->buildSampleOrder(88);
+
+        ob_start();
+        $bridge->render_order_push_button($order);
+        $output = (string) ob_get_clean();
+
+        $this->assertStringContainsString('Push to Merchandillo', $output);
+        $this->assertStringContainsString('class="button mwb-order-push-btn"', $output);
+        $this->assertStringContainsString('data-order-id="88"', $output);
+        $this->assertStringContainsString('rgb(77, 121, 170)', $output);
+        $this->assertStringContainsString('mwb-order-push-modal', $output);
+    }
+
+    public function test_handle_manual_push_order_queues_order_and_redirects_with_success_notice_state(): void
+    {
+        $bridge = $this->newBridge();
+        $_GET = ['order_id' => '77'];
+        $GLOBALS['mwb_test_state']['wc_get_order_return'] = $this->buildSampleOrder(77);
+        $GLOBALS['mwb_test_state']['next_scheduled'] = false;
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
+            'enabled' => '1',
+            'api_base_url' => 'https://data.merchandillo.com',
+            'api_key' => 'key',
+            'api_secret' => 'secret',
+            'log_errors' => '1',
+        ];
+
+        $bridge->handle_manual_push_order();
+
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['scheduled_events']);
+        $this->assertContains('merchandillo_push_order', $GLOBALS['mwb_test_state']['nonce_checks']);
+        $this->assertStringContainsString('merchandillo_manual_push=queued', (string) $GLOBALS['mwb_test_state']['last_redirect']);
+        $this->assertStringContainsString('merchandillo_order_id=77', (string) $GLOBALS['mwb_test_state']['last_redirect']);
+    }
+
+    public function test_handle_manual_push_order_sets_already_queued_status_when_event_exists(): void
+    {
+        $bridge = $this->newBridge();
+        $_GET = ['order_id' => '77'];
+        $GLOBALS['mwb_test_state']['wc_get_order_return'] = $this->buildSampleOrder(77);
+        $GLOBALS['mwb_test_state']['next_scheduled'] = true;
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
+            'enabled' => '1',
+            'api_base_url' => 'https://data.merchandillo.com',
+            'api_key' => 'key',
+            'api_secret' => 'secret',
+            'log_errors' => '1',
+        ];
+
+        $bridge->handle_manual_push_order();
+
+        $this->assertCount(0, $GLOBALS['mwb_test_state']['scheduled_events']);
+        $this->assertStringContainsString('merchandillo_manual_push=already_queued', (string) $GLOBALS['mwb_test_state']['last_redirect']);
+    }
+
+    public function test_render_manual_push_notice_outputs_success_message(): void
+    {
+        $bridge = $this->newBridge();
+        $_GET = [
+            'merchandillo_manual_push' => 'queued',
+            'merchandillo_order_id' => '33',
+        ];
+
+        ob_start();
+        $bridge->render_manual_push_notice();
+        $output = (string) ob_get_clean();
+
+        $this->assertStringContainsString('notice-success', $output);
+        $this->assertStringContainsString('Order #33 was queued for Merchandillo sync.', $output);
     }
 
     public function test_enqueue_admin_assets_only_runs_on_plugin_settings_screen(): void

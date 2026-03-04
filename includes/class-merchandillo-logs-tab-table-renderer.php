@@ -27,11 +27,17 @@ final class Merchandillo_Logs_Tab_Table_Renderer
             $timestamp = '' === $entry['timestamp'] ? '-' : $entry['timestamp'];
             $level = '' === $entry['level'] ? '-' : strtoupper($entry['level']);
             $levelClassSuffix = $this->sanitize_level_class((string) $entry['level']);
+            $parsedLine = $this->parse_line((string) $entry['line']);
 
             echo '<tr>';
             echo '<td><code>' . esc_html($timestamp) . '</code></td>';
             echo '<td><span class="mwb-level mwb-level-' . esc_attr($levelClassSuffix) . '">' . esc_html($level) . '</span></td>';
-            echo '<td><code style="white-space:pre-wrap;word-break:break-word;">' . esc_html($entry['line']) . '</code></td>';
+            echo '<td>';
+            echo '<code class="mwb-log-line">' . esc_html($parsedLine['message']) . '</code>';
+            if ('' !== $parsedLine['json']) {
+                echo '<pre class="mwb-log-json" tabindex="0">' . esc_html($parsedLine['json']) . '</pre>';
+            }
+            echo '</td>';
             echo '<td><code>' . esc_html($entry['file']) . '</code></td>';
             echo '</tr>';
         }
@@ -49,5 +55,88 @@ final class Merchandillo_Logs_Tab_Table_Renderer
         }
 
         return $levelClassSuffix;
+    }
+
+    /**
+     * @return array{message:string,json:string}
+     */
+    private function parse_line(string $line): array
+    {
+        $separatorPosition = strrpos($line, ' | ');
+        if (false === $separatorPosition) {
+            return [
+                'message' => $line,
+                'json' => '',
+            ];
+        }
+
+        $message = substr($line, 0, $separatorPosition);
+        $jsonContext = trim((string) substr($line, $separatorPosition + 3));
+        if ('' === $jsonContext) {
+            return [
+                'message' => $line,
+                'json' => '',
+            ];
+        }
+
+        $decoded = json_decode($jsonContext, true);
+        if (!is_array($decoded) || JSON_ERROR_NONE !== json_last_error()) {
+            return [
+                'message' => $line,
+                'json' => '',
+            ];
+        }
+
+        $normalized = $this->normalize_nested_json($decoded);
+        $pretty = json_encode($normalized, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if (false === $pretty || '' === $pretty) {
+            return [
+                'message' => $line,
+                'json' => '',
+            ];
+        }
+
+        return [
+            'message' => $message,
+            'json' => $pretty,
+        ];
+    }
+
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    private function normalize_nested_json($value)
+    {
+        if (is_array($value)) {
+            $normalized = [];
+            foreach ($value as $key => $item) {
+                $normalized[$key] = $this->normalize_nested_json($item);
+            }
+
+            return $normalized;
+        }
+
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        $candidate = trim($value);
+        if ('' === $candidate) {
+            return $value;
+        }
+
+        $startsLikeJson = ('{' === $candidate[0] && '}' === substr($candidate, -1))
+            || ('[' === $candidate[0] && ']' === substr($candidate, -1));
+        if (!$startsLikeJson) {
+            return $value;
+        }
+
+        $decoded = json_decode($candidate, true);
+        if (JSON_ERROR_NONE !== json_last_error() || !is_array($decoded)) {
+            return $value;
+        }
+
+        return $this->normalize_nested_json($decoded);
     }
 }

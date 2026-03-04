@@ -2,6 +2,8 @@
 
 final class Merchandillo_Admin_Page
 {
+    private const API_TEST_RESULT_OPTION_PREFIX = 'merchandillo_api_test_result_';
+
     /** @var Merchandillo_Settings_Interface */
     private $settings;
 
@@ -96,6 +98,7 @@ final class Merchandillo_Admin_Page
 
         if ('test_connection' === $action) {
             $result = $this->apiConnectionTester->run();
+            $this->store_api_test_result($result);
             $redirectArgs = [
                 'page' => $this->pageSlug,
                 'tab' => 'settings',
@@ -129,7 +132,15 @@ final class Merchandillo_Admin_Page
 
     public function render_settings_page(): void
     {
-        $this->renderer->render($_GET);
+        $request = $_GET;
+        if (!isset($request['api_test_result'])) {
+            $storedResult = $this->consume_api_test_result();
+            if (!empty($storedResult)) {
+                $request = array_merge($request, $storedResult);
+            }
+        }
+
+        $this->renderer->render($request);
     }
 
     public function enqueue_admin_assets(string $hookSuffix): void
@@ -157,5 +168,65 @@ final class Merchandillo_Admin_Page
     public function get_settings_page_url(array $extraArgs = []): string
     {
         return $this->renderer->get_settings_page_url($extraArgs);
+    }
+
+    /**
+     * @param array{ok:bool,code:string,http_status:int} $result
+     */
+    private function store_api_test_result(array $result): void
+    {
+        $payload = [
+            'api_test_result' => (string) $result['code'],
+        ];
+
+        if ((int) $result['http_status'] > 0) {
+            $payload['api_test_http_status'] = (string) $result['http_status'];
+        }
+
+        if (function_exists('set_transient')) {
+            set_transient($this->api_test_result_storage_key(), $payload, 120);
+            return;
+        }
+
+        update_option($this->api_test_result_storage_key(), $payload);
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function consume_api_test_result(): array
+    {
+        $key = $this->api_test_result_storage_key();
+
+        if (function_exists('get_transient')) {
+            $stored = get_transient($key);
+            if (function_exists('delete_transient')) {
+                delete_transient($key);
+            }
+        } else {
+            $stored = get_option($key, []);
+            update_option($key, []);
+        }
+
+        if (!is_array($stored) || !isset($stored['api_test_result'])) {
+            return [];
+        }
+
+        $result = [
+            'api_test_result' => sanitize_key((string) $stored['api_test_result']),
+        ];
+
+        if (isset($stored['api_test_http_status'])) {
+            $result['api_test_http_status'] = (string) absint((string) $stored['api_test_http_status']);
+        }
+
+        return $result;
+    }
+
+    private function api_test_result_storage_key(): string
+    {
+        $suffix = function_exists('get_current_user_id') ? (string) absint((string) get_current_user_id()) : '0';
+
+        return self::API_TEST_RESULT_OPTION_PREFIX . $suffix;
     }
 }

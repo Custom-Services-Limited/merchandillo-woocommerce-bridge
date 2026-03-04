@@ -31,24 +31,30 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
         }
 
         $endpoint = rtrim((string) $settings['api_base_url'], '/') . '/api/woocommerce/orders';
-        $response = wp_remote_post(
-            $endpoint,
+        $requestEndpoint = add_query_arg(
             [
-                'method' => 'POST',
+                'page' => '1',
+                'limit' => '1',
+            ],
+            $endpoint
+        );
+        $requestHeaders = [
+            'Accept' => 'application/json',
+            'X-API-Key' => (string) $settings['api_key'],
+            'X-API-Secret' => (string) $settings['api_secret'],
+        ];
+        $response = wp_remote_get(
+            $requestEndpoint,
+            [
                 'timeout' => 15,
-                'headers' => [
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json',
-                    'X-API-Key' => (string) $settings['api_key'],
-                    'X-API-Secret' => (string) $settings['api_secret'],
-                    'X-Merchandillo-Test' => '1',
-                ],
-                'body' => wp_json_encode(['_test_connection' => true]),
+                'headers' => $requestHeaders,
             ]
         );
 
         if (is_wp_error($response)) {
             $this->logs->write('error', __('API connection test failed.', 'merchandillo-woocommerce-bridge'), [
+                'endpoint' => $requestEndpoint,
+                'request_headers' => $this->redact_headers($requestHeaders),
                 'error' => $response->get_error_message(),
             ]);
 
@@ -60,28 +66,28 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
         }
 
         $statusCode = (int) wp_remote_retrieve_response_code($response);
+        $responseBody = $this->truncate_text((string) wp_remote_retrieve_body($response));
+        $result = ['ok' => false, 'code' => 'unexpected_http_status', 'http_status' => $statusCode];
 
         if ($statusCode >= 200 && $statusCode < 300) {
-            return ['ok' => true, 'code' => 'success', 'http_status' => $statusCode];
+            $result = ['ok' => true, 'code' => 'success', 'http_status' => $statusCode];
+        } elseif (in_array($statusCode, [401, 403], true)) {
+            $result = ['ok' => false, 'code' => 'unauthorized', 'http_status' => $statusCode];
+        } elseif (404 === $statusCode) {
+            $result = ['ok' => false, 'code' => 'endpoint_not_found', 'http_status' => $statusCode];
+        } elseif ($statusCode >= 500) {
+            $result = ['ok' => false, 'code' => 'server_error', 'http_status' => $statusCode];
         }
 
-        if (in_array($statusCode, [400, 405, 422], true)) {
-            return ['ok' => true, 'code' => 'reachable', 'http_status' => $statusCode];
-        }
+        $this->logs->write('info', __('API connection test request/response.', 'merchandillo-woocommerce-bridge'), [
+            'endpoint' => $requestEndpoint,
+            'request_headers' => $this->redact_headers($requestHeaders),
+            'response_http_status' => $statusCode,
+            'response_body' => $responseBody,
+            'result_code' => $result['code'],
+        ]);
 
-        if (in_array($statusCode, [401, 403], true)) {
-            return ['ok' => false, 'code' => 'unauthorized', 'http_status' => $statusCode];
-        }
-
-        if (404 === $statusCode) {
-            return ['ok' => false, 'code' => 'endpoint_not_found', 'http_status' => $statusCode];
-        }
-
-        if ($statusCode >= 500) {
-            return ['ok' => false, 'code' => 'server_error', 'http_status' => $statusCode];
-        }
-
-        return ['ok' => false, 'code' => 'unexpected_http_status', 'http_status' => $statusCode];
+        return $result;
     }
 
     /**
@@ -92,5 +98,30 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
         return '' !== (string) $settings['api_base_url']
             && '' !== (string) $settings['api_key']
             && '' !== (string) $settings['api_secret'];
+    }
+
+    /**
+     * @param array<string,string> $headers
+     * @return array<string,string>
+     */
+    private function redact_headers(array $headers): array
+    {
+        if (isset($headers['X-API-Key'])) {
+            $headers['X-API-Key'] = '[redacted]';
+        }
+        if (isset($headers['X-API-Secret'])) {
+            $headers['X-API-Secret'] = '[redacted]';
+        }
+
+        return $headers;
+    }
+
+    private function truncate_text(string $value): string
+    {
+        if ('' === $value) {
+            return '';
+        }
+
+        return substr($value, 0, 1000);
     }
 }

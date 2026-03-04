@@ -284,6 +284,29 @@
     font-size: 12px;
 }
 
+.mwb-admin .mwb-log-table .mwb-log-line {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.mwb-admin .mwb-log-table .mwb-log-json {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 220px;
+    overflow-x: auto;
+    overflow-y: auto;
+    white-space: pre;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 .mwb-admin .mwb-level {
     display: inline-flex;
     align-items: center;

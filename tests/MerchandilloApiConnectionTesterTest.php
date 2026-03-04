@@ -22,7 +22,7 @@ final class MerchandilloApiConnectionTesterTest extends MerchandilloTestCase
         $this->assertSame(0, $result['http_status']);
     }
 
-    public function test_run_returns_reachable_for_validation_error_status(): void
+    public function test_run_returns_unexpected_status_for_bad_request_on_get_connection_check(): void
     {
         $tester = $this->newApiConnectionTester();
         $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
@@ -32,16 +32,27 @@ final class MerchandilloApiConnectionTesterTest extends MerchandilloTestCase
             'api_secret' => 'secret',
             'log_errors' => '1',
         ];
-        $GLOBALS['mwb_test_state']['remote_post_response'] = [
+        $GLOBALS['mwb_test_state']['remote_get_response'] = [
             'response' => ['code' => 400],
             'body' => 'validation failed',
         ];
 
         $result = $tester->run();
 
-        $this->assertSame(true, $result['ok']);
-        $this->assertSame('reachable', $result['code']);
+        $this->assertSame(false, $result['ok']);
+        $this->assertSame('unexpected_http_status', $result['code']);
         $this->assertSame(400, $result['http_status']);
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['remote_get_requests']);
+        $this->assertStringContainsString(
+            '/api/woocommerce/orders?page=1&limit=1',
+            $GLOBALS['mwb_test_state']['remote_get_requests'][0][0]
+        );
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['logger_calls']);
+        $this->assertSame('info', $GLOBALS['mwb_test_state']['logger_calls'][0]['level']);
+        $this->assertStringContainsString('"response_http_status":400', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
+        $this->assertStringContainsString('"X-API-Key":"[redacted]"', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
+        $this->assertStringContainsString('"X-API-Secret":"[redacted]"', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
+        $this->assertStringNotContainsString('"X-API-Secret":"secret"', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
     }
 
     public function test_run_returns_unauthorized_when_credentials_rejected(): void
@@ -54,7 +65,7 @@ final class MerchandilloApiConnectionTesterTest extends MerchandilloTestCase
             'api_secret' => 'bad-secret',
             'log_errors' => '1',
         ];
-        $GLOBALS['mwb_test_state']['remote_post_response'] = [
+        $GLOBALS['mwb_test_state']['remote_get_response'] = [
             'response' => ['code' => 401],
             'body' => 'unauthorized',
         ];
@@ -76,12 +87,17 @@ final class MerchandilloApiConnectionTesterTest extends MerchandilloTestCase
             'api_secret' => 'secret',
             'log_errors' => '1',
         ];
-        $GLOBALS['mwb_test_state']['remote_post_response'] = new WP_Error('network_error', 'timeout');
+        $GLOBALS['mwb_test_state']['remote_get_response'] = new WP_Error('network_error', 'timeout');
 
         $result = $tester->run();
 
         $this->assertSame(false, $result['ok']);
         $this->assertSame('request_error', $result['code']);
         $this->assertSame(0, $result['http_status']);
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['logger_calls']);
+        $this->assertSame('error', $GLOBALS['mwb_test_state']['logger_calls'][0]['level']);
+        $this->assertStringContainsString('"error":"timeout"', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
+        $this->assertStringContainsString('"X-API-Key":"[redacted]"', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
+        $this->assertStringContainsString('"X-API-Secret":"[redacted]"', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
     }
 }
