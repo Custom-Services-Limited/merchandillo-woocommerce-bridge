@@ -16,23 +16,28 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-if (!function_exists('merchandillo_wc_bridge_read_version')) {
-    function merchandillo_wc_bridge_read_version(): string
+if (!function_exists('merchandillo_wc_bridge_plugin_version')) {
+    function merchandillo_wc_bridge_plugin_version(): string
     {
         $fallback = '0.0.0-dev';
-        $version_file = __DIR__ . '/VERSION';
+        $plugin_file = __FILE__;
 
-        if (!is_readable($version_file)) {
+        if (!is_readable($plugin_file)) {
             return $fallback;
         }
 
-        $version = trim((string) file_get_contents($version_file));
+        $contents = (string) file_get_contents($plugin_file);
+        if (preg_match('/^[[:space:]]*\\*[[:space:]]Version:[[:space:]]*([^[:space:]]+).*/m', $contents, $matches) !== 1) {
+            return $fallback;
+        }
+
+        $version = trim((string) $matches[1]);
 
         return $version !== '' ? $version : $fallback;
     }
 }
 
-define('MERCHANDILLO_WC_BRIDGE_VERSION', merchandillo_wc_bridge_read_version());
+define('MERCHANDILLO_WC_BRIDGE_VERSION', merchandillo_wc_bridge_plugin_version());
 define('MERCHANDILLO_WC_BRIDGE_FILE', __FILE__);
 define('MERCHANDILLO_WC_BRIDGE_DIR', plugin_dir_path(__FILE__));
 

@@ -29,8 +29,7 @@ mkdir -p "${DIST_DIR}" "${PLUGIN_DIR}"
 for path in \
     "merchandillo-woocommerce-bridge.php" \
     "includes" \
-    "assets" \
-    "VERSION"
+    "assets"
 do
     if [[ ! -e "${REPO_ROOT}/${path}" ]]; then
         echo "Missing required path: ${path}" >&2

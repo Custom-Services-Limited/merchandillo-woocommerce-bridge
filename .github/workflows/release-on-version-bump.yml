@@ -5,7 +5,6 @@ on:
     branches:
       - main
     paths:
-      - VERSION
       - merchandillo-woocommerce-bridge.php
       - scripts/ci/build-release-zip.sh
       - .github/workflows/release-on-version-bump.yml
@@ -33,25 +32,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION="$(tr -d '[:space:]' < VERSION)"
+          VERSION="$(sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([^[:space:]]+).*/\1/p' merchandillo-woocommerce-bridge.php | head -n 1)"
+
           if [[ -z "${VERSION}" ]]; then
-            echo "VERSION file is empty." >&2
-            exit 1
-          fi
-
-          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "VERSION must be semver in X.Y.Z format. Got: ${VERSION}" >&2
-            exit 1
-          fi
-
-          HEADER_VERSION="$(sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([^[:space:]]+).*/\1/p' merchandillo-woocommerce-bridge.php | head -n 1)"
-          if [[ -z "${HEADER_VERSION}" ]]; then
             echo "Could not extract plugin header Version from merchandillo-woocommerce-bridge.php." >&2
             exit 1
           fi
 
-          if [[ "${HEADER_VERSION}" != "${VERSION}" ]]; then
-            echo "Version mismatch: VERSION file=${VERSION}, plugin header=${HEADER_VERSION}." >&2
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Plugin header version must be semver in X.Y.Z format. Got: ${VERSION}" >&2
             exit 1
           fi
 
@@ -79,9 +68,9 @@ jobs:
             exit 0
           fi
 
-          if git cat-file -e "${BEFORE}:VERSION" 2>/dev/null; then
-            PREVIOUS_VERSION="$(git show "${BEFORE}:VERSION" | tr -d '[:space:]')"
-            if [[ "${PREVIOUS_VERSION}" == "${CURRENT_VERSION}" ]]; then
+          if git cat-file -e "${BEFORE}:merchandillo-woocommerce-bridge.php" 2>/dev/null; then
+            PREVIOUS_VERSION="$(git show "${BEFORE}:merchandillo-woocommerce-bridge.php" | sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([^[:space:]]+).*/\1/p' | head -n 1)"
+            if [[ -n "${PREVIOUS_VERSION}" && "${PREVIOUS_VERSION}" == "${CURRENT_VERSION}" ]]; then
               echo "should_release=false" >> "${GITHUB_OUTPUT}"
               echo "reason=version-unchanged" >> "${GITHUB_OUTPUT}"
               exit 0
@@ -95,7 +84,7 @@ jobs:
         if: steps.gate.outputs.should_release != 'true'
         shell: bash
         run: |
-          echo "Skipping release because VERSION did not change on push."
+          echo "Skipping release because plugin header version did not change on push."
 
       - name: Check release state
         id: state
