@@ -30,7 +30,6 @@ for path in \
     "merchandillo-woocommerce-bridge.php" \
     "includes" \
     "assets" \
-    "README.md" \
     "VERSION"
 do
     if [[ ! -e "${REPO_ROOT}/${path}" ]]; then

@@ -20,6 +20,7 @@ final class Merchandillo_Translation_Dictionary
             'Configure API credentials for pushing order updates to Merchandillo. Failed sync attempts are logged and never break WooCommerce checkout. Use the Logs tab to inspect, export, and clear plugin logs.' => 'Ρυθμίστε τα διαπιστευτήρια API για αποστολή ενημερώσεων παραγγελιών στο Merchandillo. Οι αποτυχημένες προσπάθειες συγχρονισμού καταγράφονται και δεν επηρεάζουν ποτέ το checkout του WooCommerce. Χρησιμοποιήστε την καρτέλα Καταγραφές για προβολή, εξαγωγή και εκκαθάριση των logs.',
             'Queue order sync on create/update/status change' => 'Προσθήκη συγχρονισμού παραγγελίας σε ουρά κατά δημιουργία/ενημέρωση/αλλαγή κατάστασης',
             'Example: https://data.merchandillo.com' => 'Παράδειγμα: https://data.merchandillo.com',
+            'Allowed values: https://data.merchandillo.com, http://host.docker.internal:{port}, http://localhost:{port}' => 'Επιτρεπόμενες τιμές: https://data.merchandillo.com, http://host.docker.internal:{port}, http://localhost:{port}',
             'Leave empty to keep the current secret.' => 'Αφήστε κενό για να διατηρηθεί το τρέχον μυστικό.',
             'Write sync failures to WooCommerce logs' => 'Καταγραφή αποτυχιών συγχρονισμού στα logs του WooCommerce',
             'Enter API Base URL, API Key, and API Secret to enable API connection tests.' => 'Συμπληρώστε API Base URL, API Key και API Secret για να ενεργοποιηθούν οι δοκιμές σύνδεσης API.',
@@ -103,6 +104,7 @@ final class Merchandillo_Translation_Dictionary
             'Success:' => 'Επιτυχία:',
             'Order pushed.' => 'Η παραγγελία στάλθηκε.',
             'API connection test request/response.' => 'Δοκιμή σύνδεσης API αίτημα/απάντηση.',
+            'API Base URL must be one of: https://data.merchandillo.com, http://host.docker.internal:{port}, or http://localhost:{port}.' => 'Το API Base URL πρέπει να είναι ένα από τα: https://data.merchandillo.com, http://host.docker.internal:{port}, ή http://localhost:{port}.',
         ];
     }
 }

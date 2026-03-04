@@ -47,6 +47,8 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
             $requestEndpoint,
             [
                 'timeout' => 15,
+                'redirection' => 0,
+                'reject_unsafe_urls' => true,
                 'headers' => $requestHeaders,
             ]
         );
@@ -66,7 +68,6 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
         }
 
         $statusCode = (int) wp_remote_retrieve_response_code($response);
-        $responseBody = $this->truncate_text((string) wp_remote_retrieve_body($response));
         $result = ['ok' => false, 'code' => 'unexpected_http_status', 'http_status' => $statusCode];
 
         if ($statusCode >= 200 && $statusCode < 300) {
@@ -79,13 +80,17 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
             $result = ['ok' => false, 'code' => 'server_error', 'http_status' => $statusCode];
         }
 
-        $this->logs->write('info', __('API connection test request/response.', 'merchandillo-woocommerce-bridge'), [
+        $logContext = [
             'endpoint' => $requestEndpoint,
             'request_headers' => $this->redact_headers($requestHeaders),
             'response_http_status' => $statusCode,
-            'response_body' => $responseBody,
             'result_code' => $result['code'],
-        ]);
+        ];
+        if ($this->should_log_response_body()) {
+            $logContext['response_body'] = $this->truncate_text((string) wp_remote_retrieve_body($response));
+        }
+
+        $this->logs->write('info', __('API connection test request/response.', 'merchandillo-woocommerce-bridge'), $logContext);
 
         return $result;
     }
@@ -123,5 +128,11 @@ final class Merchandillo_Api_Connection_Tester implements Merchandillo_Api_Conne
         }
 
         return substr($value, 0, 1000);
+    }
+
+    private function should_log_response_body(): bool
+    {
+        return defined('MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY')
+            && true === MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY;
     }
 }

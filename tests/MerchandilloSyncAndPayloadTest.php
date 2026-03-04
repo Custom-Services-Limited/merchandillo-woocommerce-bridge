@@ -97,9 +97,12 @@ final class MerchandilloSyncAndPayloadTest extends MerchandilloTestCase
             'https://data.merchandillo.com/api/woocommerce/orders',
             $GLOBALS['mwb_test_state']['remote_post_requests'][0][0]
         );
+        $this->assertSame(0, $GLOBALS['mwb_test_state']['remote_post_requests'][0][1]['redirection']);
+        $this->assertSame(true, $GLOBALS['mwb_test_state']['remote_post_requests'][0][1]['reject_unsafe_urls']);
         $this->assertCount(1, $GLOBALS['mwb_test_state']['logger_calls']);
         $this->assertSame('error', $GLOBALS['mwb_test_state']['logger_calls'][0]['level']);
         $this->assertStringContainsString('"http_status":500', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
+        $this->assertStringNotContainsString('"response_body":', $GLOBALS['mwb_test_state']['logger_calls'][0]['message']);
     }
 
     public function test_sync_order_now_logs_error_when_remote_returns_wp_error(): void

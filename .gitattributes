@@ -1,0 +1,6 @@
+tests/ export-ignore
+scripts/ export-ignore
+.github/ export-ignore
+README.md export-ignore
+*.yml export-ignore
+*.yaml export-ignore

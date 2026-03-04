@@ -438,6 +438,8 @@ final class Merchandillo_WooCommerce_Bridge
                 $requestEndpoint,
                 [
                     'timeout' => 20,
+                    'redirection' => 0,
+                    'reject_unsafe_urls' => true,
                     'headers' => [
                         'Accept' => 'application/json',
                         'X-API-Key' => (string) $settings['api_key'],
@@ -756,6 +758,8 @@ final class Merchandillo_WooCommerce_Bridge
             [
                 'method' => 'POST',
                 'timeout' => 20,
+                'redirection' => 0,
+                'reject_unsafe_urls' => true,
                 'headers' => [
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',

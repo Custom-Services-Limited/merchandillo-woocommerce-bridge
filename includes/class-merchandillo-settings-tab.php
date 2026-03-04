@@ -120,6 +120,7 @@ final class Merchandillo_Settings_Tab
 
         echo '<input type="url" class="regular-text code mwb-input" name="' . esc_attr($this->settings->option_name()) . '[api_base_url]" value="' . esc_attr($value) . '" placeholder="https://data.merchandillo.com" />';
         echo '<p class="description mwb-help">' . esc_html__('Example: https://data.merchandillo.com', 'merchandillo-woocommerce-bridge') . '</p>';
+        echo '<p class="description mwb-help">' . esc_html__('Allowed values: https://data.merchandillo.com, http://host.docker.internal:{port}, http://localhost:{port}', 'merchandillo-woocommerce-bridge') . '</p>';
     }
 
     public function render_api_key_field(): void

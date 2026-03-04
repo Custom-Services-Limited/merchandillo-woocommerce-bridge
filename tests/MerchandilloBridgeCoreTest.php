@@ -200,7 +200,7 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $sanitized = $bridge->sanitize_settings(
             [
                 'enabled' => '1',
-                'api_base_url' => 'https://api.example.com/',
+                'api_base_url' => 'http://localhost:8787/',
                 'api_key' => '',
                 'api_secret' => '',
                 'ui_language' => 'el',
@@ -208,7 +208,7 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
             ]
         );
 
-        $this->assertSame('https://api.example.com', $sanitized['api_base_url']);
+        $this->assertSame('http://localhost:8787', $sanitized['api_base_url']);
         $this->assertSame('existing-key', $sanitized['api_key']);
         $this->assertSame('existing-secret', $sanitized['api_secret']);
         $this->assertSame('el', $sanitized['ui_language']);
@@ -223,7 +223,7 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $sanitized = $bridge->sanitize_settings(
             [
                 'enabled' => '1',
-                'api_base_url' => 'https://api.example.com',
+                'api_base_url' => 'https://evil.example.com',
                 'api_key' => 'k',
                 'api_secret' => 's',
                 'ui_language' => 'invalid-language',
@@ -232,6 +232,25 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         );
 
         $this->assertSame('en', $sanitized['ui_language']);
+        $this->assertSame('https://data.merchandillo.com', $sanitized['api_base_url']);
+    }
+
+    public function test_sanitize_settings_accepts_local_docker_host_endpoint_with_port(): void
+    {
+        $bridge = $this->newBridge();
+
+        $sanitized = $bridge->sanitize_settings(
+            [
+                'enabled' => '1',
+                'api_base_url' => 'http://host.docker.internal:8787',
+                'api_key' => 'k',
+                'api_secret' => 's',
+                'ui_language' => 'en',
+                'log_errors' => '1',
+            ]
+        );
+
+        $this->assertSame('http://host.docker.internal:8787', $sanitized['api_base_url']);
     }
 
     public function test_add_settings_link_appends_plugin_settings_link(): void

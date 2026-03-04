@@ -96,6 +96,8 @@ final class Merchandillo_Order_Sync_Service
             [
                 'method' => 'POST',
                 'timeout' => 15,
+                'redirection' => 0,
+                'reject_unsafe_urls' => true,
                 'headers' => [
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
@@ -116,11 +118,15 @@ final class Merchandillo_Order_Sync_Service
 
         $statusCode = (int) wp_remote_retrieve_response_code($response);
         if ($statusCode < 200 || $statusCode >= 300) {
-            $this->logs->write('error', __('There was a problem syncing that order to Merchandillo.', 'merchandillo-woocommerce-bridge'), [
+            $logContext = [
                 'order_id' => $orderId,
                 'http_status' => $statusCode,
-                'response_body' => substr((string) wp_remote_retrieve_body($response), 0, 1000),
-            ]);
+            ];
+            if ($this->should_log_response_body()) {
+                $logContext['response_body'] = substr((string) wp_remote_retrieve_body($response), 0, 1000);
+            }
+
+            $this->logs->write('error', __('There was a problem syncing that order to Merchandillo.', 'merchandillo-woocommerce-bridge'), $logContext);
         }
     }
 
@@ -132,5 +138,11 @@ final class Merchandillo_Order_Sync_Service
         return '' !== (string) $settings['api_base_url']
             && '' !== (string) $settings['api_key']
             && '' !== (string) $settings['api_secret'];
+    }
+
+    private function should_log_response_body(): bool
+    {
+        return defined('MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY')
+            && true === MERCHANDILLO_WC_BRIDGE_LOG_REMOTE_RESPONSE_BODY;
     }
 }

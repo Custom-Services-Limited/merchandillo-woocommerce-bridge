@@ -161,6 +161,21 @@ jobs:
 
           echo "zip_path=${ZIP_PATH}" >> "${GITHUB_OUTPUT}"
 
+      - name: Verify ZIP exclusions
+        if: steps.gate.outputs.should_release == 'true' && (steps.state.outputs.release_exists != 'true' || steps.state.outputs.asset_exists != 'true')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_PATH="${{ steps.package.outputs.zip_path }}"
+          FORBIDDEN="$(unzip -Z -1 "${ZIP_PATH}" | grep -Ei '(^|/)(tests|scripts|\.github)(/|$)|(^|/)README\.md$|\.ya?ml$' || true)"
+
+          if [[ -n "${FORBIDDEN}" ]]; then
+            echo "Forbidden files were found in release ZIP:" >&2
+            printf '%s\n' "${FORBIDDEN}" >&2
+            exit 1
+          fi
+
       - name: Create GitHub release
         if: steps.gate.outputs.should_release == 'true' && steps.state.outputs.release_exists != 'true'
         env:
