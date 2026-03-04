@@ -111,6 +111,7 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertStringContainsString('data-order-id="88"', $output);
         $this->assertStringContainsString('rgb(77, 121, 170)', $output);
         $this->assertStringContainsString('mwb-order-push-modal', $output);
+        $this->assertStringContainsString('dashicons-media-code', $output);
     }
 
     public function test_handle_manual_push_order_queues_order_and_redirects_with_success_notice_state(): void
@@ -241,5 +242,41 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertCount(2, $links);
         $this->assertStringContainsString('options-general.php?page=merchandillo-woocommerce-bridge', $links[1]);
         $this->assertStringContainsString('Settings', $links[1]);
+    }
+
+    public function test_calculate_payload_differences_ignores_false_positives_from_list_response_shape(): void
+    {
+        $bridge = $this->newBridge();
+        $order = $this->buildSampleOrder(14);
+        $payloadBuilder = new Merchandillo_Order_Payload_Builder();
+        $localPayload = $payloadBuilder->build($order);
+
+        $remoteOrder = [
+            'order_number' => (string) $localPayload['order_number'],
+            'customer_name' => (string) $localPayload['customer_name'],
+            'customer_email' => (string) $localPayload['customer_email'],
+            'customer_phone' => (string) $localPayload['customer_phone'],
+            'status' => (string) $localPayload['status'],
+            'subtotal' => number_format((float) $localPayload['subtotal'], 2, '.', ''),
+            'tax_amount' => number_format((float) $localPayload['tax_amount'], 2, '.', ''),
+            'shipping_amount' => number_format((float) $localPayload['shipping_amount'], 2, '.', ''),
+            'discount_amount' => number_format((float) $localPayload['discount_amount'], 2, '.', ''),
+            'total_amount' => number_format((float) $localPayload['total_amount'], 2, '.', ''),
+            'currency' => (string) $localPayload['currency'],
+            'shipping_address' => wp_json_encode($localPayload['shipping_address']),
+            'billing_address' => wp_json_encode($localPayload['billing_address']),
+            'payment_method' => (string) $localPayload['payment_method'],
+            'payment_status' => (string) $localPayload['payment_status'],
+            'shipping_method' => (string) $localPayload['shipping_method'],
+            'tracking_number' => (string) $localPayload['tracking_number'],
+            'notes' => (string) $localPayload['notes'],
+            'order_date' => (string) $localPayload['order_date'] . 'T00:00:00.000Z',
+        ];
+
+        $method = new ReflectionMethod(Merchandillo_WooCommerce_Bridge::class, 'calculate_payload_differences');
+        /** @var array<int,array{field:string,local:string,remote:string}> $differences */
+        $differences = $method->invoke($bridge, $localPayload, $remoteOrder);
+
+        $this->assertSame([], $differences);
     }
 }

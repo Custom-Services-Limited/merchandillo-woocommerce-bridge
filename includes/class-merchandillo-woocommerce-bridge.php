@@ -286,6 +286,7 @@ final class Merchandillo_WooCommerce_Bridge
             $this->send_json_response(true, [
                 'state' => 'not_found',
                 'message' => __('This order does not exist in Merchandillo yet. You can push it now.', 'merchandillo-woocommerce-bridge'),
+                'remote_response' => $remoteResult['remote_response'],
             ]);
             return;
         }
@@ -296,6 +297,7 @@ final class Merchandillo_WooCommerce_Bridge
                 'state' => 'identical',
                 'message' => __('Order already exists in Merchandillo and no differences were detected.', 'merchandillo-woocommerce-bridge'),
                 'differences' => [],
+                'remote_response' => $remoteResult['remote_response'],
             ]);
             return;
         }
@@ -304,6 +306,7 @@ final class Merchandillo_WooCommerce_Bridge
             'state' => 'different',
             'message' => __('Order exists in Merchandillo and differences were found. Review them before overwriting.', 'merchandillo-woocommerce-bridge'),
             'differences' => $differences,
+            'remote_response' => $remoteResult['remote_response'],
         ]);
     }
 
@@ -411,7 +414,7 @@ final class Merchandillo_WooCommerce_Bridge
     /**
      * @param array<string,string> $settings
      * @param array<string,mixed> $payload
-     * @return array{ok:bool,order:array<string,mixed>|null,message:string}
+     * @return array{ok:bool,order:array<string,mixed>|null,message:string,remote_response:array<string,mixed>|null}
      */
     private function find_remote_order_for_manual_compare(array $settings, array $payload): array
     {
@@ -421,6 +424,7 @@ final class Merchandillo_WooCommerce_Bridge
         $maxPages = 10;
         $targetId = isset($payload['id']) ? (int) $payload['id'] : 0;
         $targetOrderNumber = isset($payload['order_number']) ? (string) $payload['order_number'] : '';
+        $lastResponse = null;
 
         while ($page <= $maxPages) {
             $requestEndpoint = add_query_arg(
@@ -443,19 +447,20 @@ final class Merchandillo_WooCommerce_Bridge
             );
 
             if (is_wp_error($response)) {
-                return ['ok' => false, 'order' => null, 'message' => __('Could not read orders from Merchandillo.', 'merchandillo-woocommerce-bridge') . ' ' . $response->get_error_message()];
+                return ['ok' => false, 'order' => null, 'message' => __('Could not read orders from Merchandillo.', 'merchandillo-woocommerce-bridge') . ' ' . $response->get_error_message(), 'remote_response' => null];
             }
 
             $statusCode = (int) wp_remote_retrieve_response_code($response);
             if ($statusCode < 200 || $statusCode >= 300) {
-                return ['ok' => false, 'order' => null, 'message' => sprintf(__('Could not read orders from Merchandillo (HTTP %d).', 'merchandillo-woocommerce-bridge'), $statusCode)];
+                return ['ok' => false, 'order' => null, 'message' => sprintf(__('Could not read orders from Merchandillo (HTTP %d).', 'merchandillo-woocommerce-bridge'), $statusCode), 'remote_response' => null];
             }
 
             $body = (string) wp_remote_retrieve_body($response);
             $decoded = json_decode($body, true);
             if (!is_array($decoded)) {
-                return ['ok' => false, 'order' => null, 'message' => __('Merchandillo returned an invalid response while reading orders.', 'merchandillo-woocommerce-bridge')];
+                return ['ok' => false, 'order' => null, 'message' => __('Merchandillo returned an invalid response while reading orders.', 'merchandillo-woocommerce-bridge'), 'remote_response' => null];
             }
+            $lastResponse = $decoded;
 
             $orders = isset($decoded['orders']) && is_array($decoded['orders']) ? $decoded['orders'] : [];
             foreach ($orders as $remoteOrder) {
@@ -466,7 +471,7 @@ final class Merchandillo_WooCommerce_Bridge
                 $remoteId = isset($remoteOrder['id']) ? (int) $remoteOrder['id'] : 0;
                 $remoteOrderNumber = isset($remoteOrder['order_number']) ? (string) $remoteOrder['order_number'] : '';
                 if (($targetId > 0 && $remoteId === $targetId) || ('' !== $targetOrderNumber && $remoteOrderNumber === $targetOrderNumber)) {
-                    return ['ok' => true, 'order' => $remoteOrder, 'message' => ''];
+                    return ['ok' => true, 'order' => $remoteOrder, 'message' => '', 'remote_response' => $decoded];
                 }
             }
 
@@ -481,7 +486,7 @@ final class Merchandillo_WooCommerce_Bridge
             $page++;
         }
 
-        return ['ok' => true, 'order' => null, 'message' => ''];
+        return ['ok' => true, 'order' => null, 'message' => '', 'remote_response' => $lastResponse];
     }
 
     /**
@@ -489,11 +494,101 @@ final class Merchandillo_WooCommerce_Bridge
      */
     private function calculate_payload_differences(array $localPayload, array $remoteOrder): array
     {
-        $normalizedRemote = $this->normalize_remote_for_compare($remoteOrder, $localPayload);
+        $comparison = $this->build_comparable_payloads($localPayload, $remoteOrder);
         $differences = [];
-        $this->collect_differences($localPayload, $normalizedRemote, '', $differences, 150);
+        $this->collect_differences($comparison['local'], $comparison['remote'], '', $differences, 150);
 
         return $differences;
+    }
+
+    /**
+     * @param array<string,mixed> $localPayload
+     * @param array<string,mixed> $remoteOrder
+     * @return array{local:array<string,mixed>,remote:array<string,mixed>}
+     */
+    private function build_comparable_payloads(array $localPayload, array $remoteOrder): array
+    {
+        $localComparable = [];
+        $remoteComparable = [];
+
+        $comparableKeys = [
+            'id',
+            'order_number',
+            'customer_name',
+            'customer_email',
+            'customer_phone',
+            'status',
+            'subtotal',
+            'tax_amount',
+            'shipping_amount',
+            'discount_amount',
+            'total_amount',
+            'currency',
+            'shipping_address',
+            'billing_address',
+            'payment_method',
+            'payment_status',
+            'shipping_method',
+            'tracking_number',
+            'notes',
+            'order_date',
+        ];
+
+        foreach ($comparableKeys as $key) {
+            if (!array_key_exists($key, $localPayload)) {
+                continue;
+            }
+
+            if ('id' === $key) {
+                $remoteId = $remoteOrder['id'] ?? $remoteOrder['external_order_id'] ?? null;
+                if (null === $remoteId && isset($remoteOrder['order_number']) && is_numeric((string) $remoteOrder['order_number'])) {
+                    $remoteId = $remoteOrder['order_number'];
+                }
+                if (null === $remoteId || '' === (string) $remoteId) {
+                    continue;
+                }
+                $localComparable[$key] = $localPayload[$key];
+                $remoteComparable[$key] = $remoteId;
+                continue;
+            }
+
+            if ('shipping_address' === $key || 'billing_address' === $key) {
+                $decodedAddress = $this->decode_json_object($remoteOrder[$key] ?? null);
+                if (null === $decodedAddress) {
+                    continue;
+                }
+                $localComparable[$key] = $localPayload[$key];
+                $remoteComparable[$key] = $decodedAddress;
+                continue;
+            }
+
+            if ('order_date' === $key) {
+                $remoteDate = isset($remoteOrder['order_date']) ? (string) $remoteOrder['order_date'] : '';
+                if ('' === $remoteDate) {
+                    continue;
+                }
+                $localComparable[$key] = $localPayload[$key];
+                $remoteComparable[$key] = substr($remoteDate, 0, 10);
+                continue;
+            }
+
+            if (array_key_exists($key, $remoteOrder)) {
+                $localComparable[$key] = $localPayload[$key];
+                $remoteComparable[$key] = $remoteOrder[$key];
+            }
+        }
+
+        if (array_key_exists('items', $localPayload) && array_key_exists('items', $remoteOrder) && is_array($remoteOrder['items'])) {
+            $localComparable['items'] = $localPayload['items'];
+            $remoteComparable['items'] = $remoteOrder['items'];
+        }
+
+        $remoteNormalized = $this->normalize_remote_for_compare($remoteComparable, $localComparable);
+
+        return [
+            'local' => $localComparable,
+            'remote' => $remoteNormalized,
+        ];
     }
 
     /**
@@ -580,7 +675,8 @@ final class Merchandillo_WooCommerce_Bridge
         }
 
         if (is_numeric($value)) {
-            return (string) $value;
+            $formatted = number_format((float) $value, 6, '.', '');
+            return rtrim(rtrim($formatted, '0'), '.');
         }
 
         if (is_bool($value)) {
@@ -592,6 +688,28 @@ final class Merchandillo_WooCommerce_Bridge
         }
 
         return (string) $value;
+    }
+
+    /**
+     * @param mixed $value
+     * @return array<string,mixed>|null
+     */
+    private function decode_json_object($value): ?array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (!is_string($value) || '' === trim($value)) {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return $decoded;
     }
 
     /**
@@ -676,8 +794,27 @@ final class Merchandillo_WooCommerce_Bridge
         }
         self::$manualPushModalRendered = true;
 
-        echo '<div id="mwb-order-push-modal" class="mwb-order-push-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.45);">';
-        echo '<div style="max-width:760px;width:92%;margin:6vh auto;background:#fff;border-radius:14px;box-shadow:0 18px 40px rgba(15,23,42,.25);overflow:hidden;">';
+        $i18n = [
+            'pushOrder' => __('Push Order', 'merchandillo-woocommerce-bridge'),
+            'overwriteInMerchandillo' => __('Overwrite in Merchandillo', 'merchandillo-woocommerce-bridge'),
+            'checkingOrder' => __('Checking order in Merchandillo...', 'merchandillo-woocommerce-bridge'),
+            'requestFailed' => __('Request failed.', 'merchandillo-woocommerce-bridge'),
+            'unexpectedResponse' => __('Unexpected response.', 'merchandillo-woocommerce-bridge'),
+            'sendingOrder' => __('Sending order...', 'merchandillo-woocommerce-bridge'),
+            'pushFailed' => __('Push failed.', 'merchandillo-woocommerce-bridge'),
+            'orderPushed' => __('Order pushed.', 'merchandillo-woocommerce-bridge'),
+            'successLabel' => __('Success:', 'merchandillo-woocommerce-bridge'),
+            'errorLabel' => __('Error:', 'merchandillo-woocommerce-bridge'),
+            'fieldLabel' => __('Field', 'merchandillo-woocommerce-bridge'),
+            'merchandilloLabel' => __('Merchandillo', 'merchandillo-woocommerce-bridge'),
+            'woocommerceLabel' => __('WooCommerce', 'merchandillo-woocommerce-bridge'),
+            'jsonResponseLabel' => __('View JSON response', 'merchandillo-woocommerce-bridge'),
+        ];
+
+        $textAlign = function_exists('is_rtl') && is_rtl() ? 'right' : 'left';
+
+        echo '<div id="mwb-order-push-modal" class="mwb-order-push-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.45);text-align:' . esc_attr($textAlign) . ';">';
+        echo '<div style="max-width:760px;width:92%;margin:6vh auto;background:#fff;border-radius:14px;box-shadow:0 18px 40px rgba(15,23,42,.25);overflow:hidden;text-align:' . esc_attr($textAlign) . ';">';
         echo '<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:10px;">';
         echo '<h2 style="margin:0;font-size:18px;line-height:1.3;">' . esc_html__('Push Order to Merchandillo', 'merchandillo-woocommerce-bridge') . '</h2>';
         echo '<button type="button" id="mwb-order-push-close" class="button" style="min-width:32px;padding:0 10px;">&times;</button>';
@@ -690,17 +827,20 @@ final class Merchandillo_WooCommerce_Bridge
         echo '</div>';
         echo '</div>';
         echo '<script>(function(){';
+        echo 'var t=' . wp_json_encode($i18n) . ';';
         echo 'var modal=document.getElementById("mwb-order-push-modal");if(!modal){return;}';
         echo 'var content=document.getElementById("mwb-order-push-content");var confirmBtn=document.getElementById("mwb-order-push-confirm");var closeBtn=document.getElementById("mwb-order-push-close");var cancelBtn=document.getElementById("mwb-order-push-cancel");';
         echo 'var state={orderId:0,ajaxUrl:"",nonce:""};';
         echo 'function esc(s){return String(s===undefined?"":s).replace(/[&<>]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;"})[c];});}';
         echo 'function open(){modal.style.display="block";document.body.style.overflow="hidden";}';
-        echo 'function close(){modal.style.display="none";document.body.style.overflow="";confirmBtn.style.display="none";confirmBtn.textContent="Push Order";confirmBtn.disabled=false;}';
+        echo 'function close(){modal.style.display="none";document.body.style.overflow="";confirmBtn.style.display="none";confirmBtn.textContent=t.pushOrder;confirmBtn.disabled=false;}';
         echo 'function post(action,data){var body=new URLSearchParams(data);body.append("action",action);return fetch(state.ajaxUrl,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8"},body:body.toString(),credentials:"same-origin"}).then(function(r){return r.json();});}';
-        echo 'function renderDiffs(diffs){if(!diffs||!diffs.length){return "";}var rows=diffs.map(function(d){return "<tr><td style=\'padding:6px;border:1px solid #e2e8f0;white-space:nowrap;\'><code>"+esc(d.field)+"</code></td><td style=\'padding:6px;border:1px solid #e2e8f0;\'><code>"+esc(d.remote)+"</code></td><td style=\'padding:6px;border:1px solid #e2e8f0;\'><code>"+esc(d.local)+"</code></td></tr>";}).join("");return "<div style=\'overflow:auto;max-height:320px;\'><table style=\'width:100%;border-collapse:collapse;font-size:12px;\'><thead><tr><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>Field</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>Merchandillo</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>WooCommerce</th></tr></thead><tbody>"+rows+"</tbody></table></div>";}';
-        echo 'function compare(){content.innerHTML="<p>Checking order in Merchandillo...</p>";confirmBtn.style.display="none";post("' . esc_js(self::MANUAL_COMPARE_AJAX_ACTION) . '",{nonce:state.nonce,order_id:String(state.orderId)}).then(function(res){if(!res||!res.success){throw new Error((res&&res.data&&res.data.message)?res.data.message:"Request failed.");}var d=res.data||{};if(d.state==="not_found"){content.innerHTML="<p>"+esc(d.message)+"</p>";confirmBtn.textContent="Push Order";confirmBtn.style.display="inline-block";return;}if(d.state==="identical"){content.innerHTML="<p>"+esc(d.message)+"</p>";return;}if(d.state==="different"){content.innerHTML="<p>"+esc(d.message)+"</p>"+renderDiffs(d.differences||[]);confirmBtn.textContent="Overwrite in Merchandillo";confirmBtn.style.display="inline-block";return;}content.innerHTML="<p>Unexpected response.</p>";}).catch(function(err){content.innerHTML="<div style=\'padding:10px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:8px;\'><strong>Error:</strong> "+esc(err.message)+"</div>";});}';
-        echo 'function pushNow(){confirmBtn.disabled=true;content.innerHTML+="<p>Sending order...</p>";post("' . esc_js(self::MANUAL_PUSH_AJAX_ACTION) . '",{nonce:state.nonce,order_id:String(state.orderId)}).then(function(res){confirmBtn.disabled=false;if(!res||!res.success){throw new Error((res&&res.data&&res.data.message)?res.data.message:"Push failed.");}content.innerHTML="<div style=\'padding:10px;border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:8px;\'><strong>Success:</strong> "+esc((res.data&&res.data.message)?res.data.message:"Order pushed.")+"</div>";confirmBtn.style.display="none";}).catch(function(err){confirmBtn.disabled=false;content.innerHTML="<div style=\'padding:10px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:8px;\'><strong>Error:</strong> "+esc(err.message)+"</div>";});}';
+        echo 'function renderRemoteResponse(remote){if(!remote){return "";}var raw="";try{raw=JSON.stringify(remote,null,2);}catch(e){raw=String(remote);}return "<div style=\'margin:10px 0 12px;\'><button type=\'button\' class=\'button mwb-json-toggle\' data-target=\'mwb-remote-json-response\' title=\'"+esc(t.jsonResponseLabel)+"\' aria-label=\'"+esc(t.jsonResponseLabel)+"\'><span class=\'dashicons dashicons-media-code\'></span></button><pre id=\'mwb-remote-json-response\' style=\'display:none;margin-top:8px;max-height:260px;overflow:auto;border:1px solid #e2e8f0;background:#f8fafc;padding:10px;border-radius:8px;\'><code>"+esc(raw)+"</code></pre></div>";}';
+        echo 'function renderDiffs(diffs){if(!diffs||!diffs.length){return "";}var rows=diffs.map(function(d){return "<tr><td style=\'padding:6px;border:1px solid #e2e8f0;white-space:nowrap;\'><code>"+esc(d.field)+"</code></td><td style=\'padding:6px;border:1px solid #e2e8f0;\'><code>"+esc(d.remote)+"</code></td><td style=\'padding:6px;border:1px solid #e2e8f0;\'><code>"+esc(d.local)+"</code></td></tr>";}).join("");return "<div style=\'overflow:auto;max-height:320px;\'><table style=\'width:100%;border-collapse:collapse;font-size:12px;\'><thead><tr><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.fieldLabel)+"</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.merchandilloLabel)+"</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.woocommerceLabel)+"</th></tr></thead><tbody>"+rows+"</tbody></table></div>";}';
+        echo 'function compare(){content.innerHTML="<p>"+esc(t.checkingOrder)+"</p>";confirmBtn.style.display="none";post("' . esc_js(self::MANUAL_COMPARE_AJAX_ACTION) . '",{nonce:state.nonce,order_id:String(state.orderId)}).then(function(res){if(!res||!res.success){throw new Error((res&&res.data&&res.data.message)?res.data.message:t.requestFailed);}var d=res.data||{};var jsonView=renderRemoteResponse(d.remote_response||null);if(d.state==="not_found"){content.innerHTML="<p>"+esc(d.message)+"</p>"+jsonView;confirmBtn.textContent=t.pushOrder;confirmBtn.style.display="inline-block";return;}if(d.state==="identical"){content.innerHTML="<p>"+esc(d.message)+"</p>"+jsonView;return;}if(d.state==="different"){content.innerHTML="<p>"+esc(d.message)+"</p>"+jsonView+renderDiffs(d.differences||[]);confirmBtn.textContent=t.overwriteInMerchandillo;confirmBtn.style.display="inline-block";return;}content.innerHTML="<p>"+esc(t.unexpectedResponse)+"</p>";}).catch(function(err){content.innerHTML="<div style=\'padding:10px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:8px;\'><strong>"+esc(t.errorLabel)+"</strong> "+esc(err.message)+"</div>";});}';
+        echo 'function pushNow(){confirmBtn.disabled=true;content.innerHTML+="<p>"+esc(t.sendingOrder)+"</p>";post("' . esc_js(self::MANUAL_PUSH_AJAX_ACTION) . '",{nonce:state.nonce,order_id:String(state.orderId)}).then(function(res){confirmBtn.disabled=false;if(!res||!res.success){throw new Error((res&&res.data&&res.data.message)?res.data.message:t.pushFailed);}content.innerHTML="<div style=\'padding:10px;border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:8px;\'><strong>"+esc(t.successLabel)+"</strong> "+esc((res.data&&res.data.message)?res.data.message:t.orderPushed)+"</div>";confirmBtn.style.display="none";}).catch(function(err){confirmBtn.disabled=false;content.innerHTML="<div style=\'padding:10px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:8px;\'><strong>"+esc(t.errorLabel)+"</strong> "+esc(err.message)+"</div>";});}';
         echo 'document.addEventListener("click",function(e){var btn=e.target.closest(".mwb-order-push-btn");if(!btn){return;}e.preventDefault();state.orderId=parseInt(btn.getAttribute("data-order-id")||"0",10);state.ajaxUrl=btn.getAttribute("data-ajax-url")||"";state.nonce=btn.getAttribute("data-nonce")||"";if(!state.orderId||!state.ajaxUrl){return;}open();compare();});';
+        echo 'content.addEventListener("click",function(e){var btn=e.target.closest(".mwb-json-toggle");if(!btn){return;}e.preventDefault();var targetId=btn.getAttribute("data-target")||"";if(!targetId){return;}var target=document.getElementById(targetId);if(!target){return;}target.style.display=(target.style.display==="block")?"none":"block";});';
         echo 'confirmBtn.addEventListener("click",function(e){e.preventDefault();pushNow();});closeBtn.addEventListener("click",function(e){e.preventDefault();close();});cancelBtn.addEventListener("click",function(e){e.preventDefault();close();});modal.addEventListener("click",function(e){if(e.target===modal){close();}});';
         echo '})();</script>';
     }

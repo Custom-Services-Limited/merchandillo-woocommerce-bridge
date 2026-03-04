@@ -10,9 +10,6 @@ final class Merchandillo_Translation_Manager implements Merchandillo_Translation
     /** @var Merchandillo_Translation_Dictionary */
     private $dictionary;
 
-    /** @var string|null */
-    private $language = null;
-
     public function __construct(
         Merchandillo_Settings_Interface $settings,
         ?Merchandillo_Translation_Dictionary $dictionary = null
@@ -46,18 +43,12 @@ final class Merchandillo_Translation_Manager implements Merchandillo_Translation
 
     private function current_language(): string
     {
-        if (null !== $this->language) {
-            return $this->language;
-        }
-
         $settings = $this->settings->get();
         $language = isset($settings['ui_language']) ? sanitize_key((string) $settings['ui_language']) : 'en';
         if (!in_array($language, ['en', 'el'], true)) {
             $language = 'en';
         }
 
-        $this->language = $language;
-
-        return $this->language;
+        return $language;
     }
 }

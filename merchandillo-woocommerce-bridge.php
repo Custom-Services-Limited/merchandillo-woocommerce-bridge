@@ -16,7 +16,23 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MERCHANDILLO_WC_BRIDGE_VERSION', '0.1.0');
+if (!function_exists('merchandillo_wc_bridge_read_version')) {
+    function merchandillo_wc_bridge_read_version(): string
+    {
+        $fallback = '0.0.0-dev';
+        $version_file = __DIR__ . '/VERSION';
+
+        if (!is_readable($version_file)) {
+            return $fallback;
+        }
+
+        $version = trim((string) file_get_contents($version_file));
+
+        return $version !== '' ? $version : $fallback;
+    }
+}
+
+define('MERCHANDILLO_WC_BRIDGE_VERSION', merchandillo_wc_bridge_read_version());
 define('MERCHANDILLO_WC_BRIDGE_FILE', __FILE__);
 define('MERCHANDILLO_WC_BRIDGE_DIR', plugin_dir_path(__FILE__));
 

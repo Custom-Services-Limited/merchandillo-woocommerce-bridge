@@ -63,4 +63,24 @@ final class MerchandilloTranslationManagerTest extends MerchandilloTestCase
 
         $this->assertSame('Settings', $translated);
     }
+
+    public function test_translate_gettext_honors_latest_ui_language_setting_without_stale_cache(): void
+    {
+        $manager = $this->newTranslationManager();
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
+            'enabled' => '1',
+            'api_base_url' => 'https://data.merchandillo.com',
+            'api_key' => '',
+            'api_secret' => '',
+            'ui_language' => 'el',
+            'log_errors' => '1',
+        ];
+
+        $first = $manager->translate_gettext('Settings', 'Settings', 'merchandillo-woocommerce-bridge');
+        $this->assertSame('Ρυθμίσεις', $first);
+
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options']['ui_language'] = 'en';
+        $second = $manager->translate_gettext('Settings', 'Settings', 'merchandillo-woocommerce-bridge');
+        $this->assertSame('Settings', $second);
+    }
 }
