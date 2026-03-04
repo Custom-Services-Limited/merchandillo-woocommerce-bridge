@@ -1,0 +1,169 @@
+name: Release on Version Bump
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - merchandillo-woocommerce-bridge.php
+      - scripts/ci/build-release-zip.sh
+      - .github/workflows/release-on-version-bump.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and validate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(sed -nE 's/^[[:space:]]*\*[[:space:]]Version:[[:space:]]*([^[:space:]]+).*/\1/p' merchandillo-woocommerce-bridge.php | head -n 1)"
+
+          if [[ -z "${VERSION}" ]]; then
+            echo "Could not extract plugin header Version from merchandillo-woocommerce-bridge.php." >&2
+            exit 1
+          fi
+
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Plugin header version must be semver in X.Y.Z format. Got: ${VERSION}" >&2
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check release state
+        id: state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.version.outputs.tag }}"
+          ASSET_NAME="merchandillo-woocommerce-bridge-${{ steps.version.outputs.version }}.zip"
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            TAG_EXISTS=true
+          else
+            TAG_EXISTS=false
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            RELEASE_EXISTS=true
+          else
+            RELEASE_EXISTS=false
+          fi
+
+          if [[ "${TAG_EXISTS}" == "false" && "${RELEASE_EXISTS}" == "true" ]]; then
+            echo "Inconsistent state: release exists but tag does not exist (${TAG})." >&2
+            exit 1
+          fi
+
+          if [[ "${RELEASE_EXISTS}" == "true" ]] && gh release view "${TAG}" --json assets --jq '.assets[].name' | grep -Fx "${ASSET_NAME}" >/dev/null; then
+            ASSET_EXISTS=true
+          else
+            ASSET_EXISTS=false
+          fi
+
+          echo "tag_exists=${TAG_EXISTS}" >> "${GITHUB_OUTPUT}"
+          echo "release_exists=${RELEASE_EXISTS}" >> "${GITHUB_OUTPUT}"
+          echo "asset_exists=${ASSET_EXISTS}" >> "${GITHUB_OUTPUT}"
+          echo "asset_name=${ASSET_NAME}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${RELEASE_EXISTS}" == "true" ]]; then
+            echo "should_release=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=release-already-exists" >> "${GITHUB_OUTPUT}"
+          else
+            echo "should_release=true" >> "${GITHUB_OUTPUT}"
+            echo "reason=release-missing-for-plugin-version" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Stop if release is not needed
+        if: steps.state.outputs.should_release != 'true'
+        shell: bash
+        run: |
+          echo "Skipping release because plugin header version release already exists."
+
+      - name: Build release ZIP
+        id: package
+        if: steps.state.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x scripts/ci/build-release-zip.sh
+          scripts/ci/build-release-zip.sh "${{ steps.version.outputs.version }}"
+
+          ZIP_PATH="dist/merchandillo-woocommerce-bridge-${{ steps.version.outputs.version }}.zip"
+          if [[ ! -f "${ZIP_PATH}" ]]; then
+            echo "Expected ZIP not found at ${ZIP_PATH}." >&2
+            exit 1
+          fi
+
+          echo "zip_path=${ZIP_PATH}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify ZIP exclusions
+        if: steps.state.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_PATH="${{ steps.package.outputs.zip_path }}"
+          FORBIDDEN="$(unzip -Z -1 "${ZIP_PATH}" | grep -Ei '(^|/)(tests|scripts|\.github)(/|$)|(^|/)README\.md$|\.ya?ml$' || true)"
+
+          if [[ -n "${FORBIDDEN}" ]]; then
+            echo "Forbidden files were found in release ZIP:" >&2
+            printf '%s\n' "${FORBIDDEN}" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        if: steps.state.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_PATH="${{ steps.package.outputs.zip_path }}"
+          NOTES="Automated release for plugin version ${VERSION}."
+
+          if [[ "${{ steps.state.outputs.tag_exists }}" == "true" ]]; then
+            gh release create "${TAG}" "${ZIP_PATH}" --title "${TAG}" --notes "${NOTES}"
+          else
+            gh release create "${TAG}" "${ZIP_PATH}" --title "${TAG}" --notes "${NOTES}" --target "${{ github.sha }}"
+          fi
+
+      - name: Workflow summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Release Automation Summary"
+            echo
+            echo "- Version: \`${{ steps.version.outputs.version }}\`"
+            echo "- Tag: \`${{ steps.version.outputs.tag }}\`"
+            echo "- Gate reason: \`${{ steps.state.outputs.reason }}\`"
+            echo "- Should release: \`${{ steps.state.outputs.should_release }}\`"
+            echo "- Tag exists: \`${{ steps.state.outputs.tag_exists }}\`"
+            echo "- Release exists: \`${{ steps.state.outputs.release_exists }}\`"
+            echo "- ZIP asset exists: \`${{ steps.state.outputs.asset_exists }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

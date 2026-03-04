@@ -1,0 +1,386 @@
+.mwb-admin {
+    --mwb-bg: #f8fafc;
+    --mwb-card: #ffffff;
+    --mwb-border: #e2e8f0;
+    --mwb-text: #0f172a;
+    --mwb-muted: #475569;
+    --mwb-primary: #0f172a;
+    --mwb-primary-hover: #1e293b;
+    --mwb-soft: #f1f5f9;
+    --mwb-danger: #dc2626;
+    --mwb-danger-hover: #b91c1c;
+    max-width: 1120px;
+}
+
+.mwb-admin .mwb-hero {
+    margin-top: 16px;
+    margin-bottom: 14px;
+    padding: 20px 24px;
+    border-radius: 16px;
+    border: 1px solid var(--mwb-border);
+    background:
+        radial-gradient(circle at 0 0, rgba(14, 165, 233, 0.14), transparent 45%),
+        radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.1), transparent 50%),
+        var(--mwb-card);
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.mwb-admin .mwb-hero-content {
+    min-width: 280px;
+}
+
+.mwb-admin .mwb-title {
+    margin: 0;
+    color: var(--mwb-text);
+    font-size: 28px;
+    line-height: 1.25;
+}
+
+.mwb-admin .mwb-subtitle {
+    margin: 8px 0 0;
+    color: var(--mwb-muted);
+    max-width: 720px;
+}
+
+.mwb-admin .mwb-hero-link.button.button-primary {
+    margin-top: 2px;
+    border: 1px solid var(--mwb-primary);
+    background: var(--mwb-primary);
+    color: #ffffff;
+    border-radius: 10px;
+    min-height: 38px;
+    line-height: 36px;
+    font-weight: 600;
+    padding: 0 14px;
+    box-shadow: none;
+}
+
+.mwb-admin .mwb-hero-link.button.button-primary:hover,
+.mwb-admin .mwb-hero-link.button.button-primary:focus {
+    background: var(--mwb-primary-hover);
+    border-color: var(--mwb-primary-hover);
+    color: #ffffff;
+}
+
+.mwb-admin .mwb-tab-wrapper {
+    border-bottom: none;
+    margin-bottom: 14px;
+}
+
+.mwb-admin .mwb-tab {
+    border: 1px solid var(--mwb-border);
+    border-bottom: 1px solid var(--mwb-border);
+    border-radius: 10px;
+    margin-left: 0;
+    margin-right: 8px;
+    padding: 8px 14px;
+    background: #ffffff;
+    color: var(--mwb-muted);
+    font-weight: 500;
+}
+
+.mwb-admin .mwb-tab.nav-tab-active {
+    background: var(--mwb-soft);
+    color: var(--mwb-text);
+    border-color: #cbd5e1;
+}
+
+.mwb-admin .mwb-content {
+    display: block;
+}
+
+.mwb-admin .mwb-card {
+    background: var(--mwb-card);
+    border: 1px solid var(--mwb-border);
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.mwb-admin .mwb-section-description {
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: var(--mwb-muted);
+}
+
+.mwb-admin .mwb-settings-form .form-table {
+    margin-top: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    background: #ffffff;
+    border: 1px solid var(--mwb-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.mwb-admin .mwb-settings-form .form-table th,
+.mwb-admin .mwb-settings-form .form-table td {
+    border-top: 1px solid var(--mwb-border);
+    padding: 16px;
+    vertical-align: top;
+}
+
+.mwb-admin .mwb-settings-form .form-table tr:first-child th,
+.mwb-admin .mwb-settings-form .form-table tr:first-child td {
+    border-top: none;
+}
+
+.mwb-admin .mwb-settings-form .form-table th {
+    width: 220px;
+    color: var(--mwb-text);
+    font-weight: 600;
+}
+
+.mwb-admin .mwb-input {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    min-height: 38px;
+    padding: 0 12px;
+    background: #ffffff;
+    box-shadow: none;
+}
+
+.mwb-admin .mwb-input:focus {
+    border-color: #94a3b8;
+    box-shadow: 0 0 0 1px #94a3b8;
+}
+
+.mwb-admin .mwb-select {
+    min-height: 38px;
+    line-height: 1.2;
+}
+
+.mwb-admin .mwb-help {
+    margin-top: 8px;
+    color: var(--mwb-muted);
+}
+
+.mwb-admin .mwb-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--mwb-text);
+}
+
+.mwb-admin .mwb-check input[type="checkbox"] {
+    margin: 0;
+}
+
+.mwb-admin .mwb-form-actions {
+    margin-top: 16px;
+}
+
+.mwb-admin .mwb-form-actions .button.button-primary,
+.mwb-admin .mwb-btn-primary.button.button-primary {
+    border-radius: 10px;
+    min-height: 38px;
+    line-height: 36px;
+    padding: 0 14px;
+    box-shadow: none;
+    border-color: var(--mwb-primary);
+    background: var(--mwb-primary);
+    color: #ffffff;
+}
+
+.mwb-admin .mwb-form-actions .button.button-primary:hover,
+.mwb-admin .mwb-form-actions .button.button-primary:focus,
+.mwb-admin .mwb-btn-primary.button.button-primary:hover,
+.mwb-admin .mwb-btn-primary.button.button-primary:focus {
+    border-color: var(--mwb-primary-hover);
+    background: var(--mwb-primary-hover);
+    color: #ffffff;
+}
+
+.mwb-admin .mwb-log-filters {
+    margin-bottom: 14px;
+}
+
+.mwb-admin .mwb-filter-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 2fr) minmax(140px, 1fr) minmax(220px, 2fr) minmax(100px, 0.8fr) auto;
+    gap: 10px;
+    align-items: end;
+}
+
+.mwb-admin .mwb-filter-field {
+    margin: 0;
+}
+
+.mwb-admin .mwb-label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--mwb-text);
+    font-weight: 500;
+}
+
+.mwb-admin .mwb-filter-limit input {
+    width: 100%;
+}
+
+.mwb-admin .mwb-filter-submit {
+    display: flex;
+    align-items: end;
+}
+
+.mwb-admin .mwb-log-actions {
+    margin: 10px 0 8px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.mwb-admin .mwb-inline-form {
+    margin: 0;
+}
+
+.mwb-admin .mwb-btn-secondary.button {
+    border-radius: 10px;
+    min-height: 36px;
+    line-height: 34px;
+    border-color: #cbd5e1;
+    color: var(--mwb-text);
+    background: #ffffff;
+}
+
+.mwb-admin .mwb-btn-secondary.button:hover,
+.mwb-admin .mwb-btn-secondary.button:focus {
+    border-color: #94a3b8;
+    color: var(--mwb-text);
+    background: var(--mwb-soft);
+}
+
+.mwb-admin .mwb-btn-danger.button {
+    border-radius: 10px;
+    min-height: 36px;
+    line-height: 34px;
+    border-color: var(--mwb-danger);
+    color: #ffffff;
+    background: var(--mwb-danger);
+}
+
+.mwb-admin .mwb-btn-danger.button:hover,
+.mwb-admin .mwb-btn-danger.button:focus {
+    border-color: var(--mwb-danger-hover);
+    background: var(--mwb-danger-hover);
+    color: #ffffff;
+}
+
+.mwb-admin .mwb-log-table {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+    box-sizing: border-box;
+    border: 1px solid var(--mwb-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.mwb-admin .mwb-log-table th,
+.mwb-admin .mwb-log-table td {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.mwb-admin .mwb-log-table th {
+    background: var(--mwb-soft);
+    color: var(--mwb-text);
+}
+
+.mwb-admin .mwb-log-table td code {
+    font-size: 12px;
+}
+
+.mwb-admin .mwb-log-table .mwb-log-line {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.mwb-admin .mwb-log-table .mwb-log-json {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    max-height: 220px;
+    overflow-x: auto;
+    overflow-y: auto;
+    white-space: pre;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.mwb-admin .mwb-level {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    background: #f8fafc;
+}
+
+.mwb-admin .mwb-level-error,
+.mwb-admin .mwb-level-critical,
+.mwb-admin .mwb-level-alert,
+.mwb-admin .mwb-level-emergency {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.mwb-admin .mwb-level-warning {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #c2410c;
+}
+
+.mwb-admin .mwb-level-notice,
+.mwb-admin .mwb-level-info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.mwb-admin .mwb-level-debug {
+    background: #ecfeff;
+    border-color: #a5f3fc;
+    color: #0e7490;
+}
+
+@media (max-width: 1100px) {
+    .mwb-admin .mwb-filter-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .mwb-admin .mwb-filter-submit {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 782px) {
+    .mwb-admin .mwb-hero {
+        flex-direction: column;
+    }
+
+    .mwb-admin .mwb-filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .mwb-admin .mwb-settings-form .form-table th {
+        width: auto;
+    }
+}
