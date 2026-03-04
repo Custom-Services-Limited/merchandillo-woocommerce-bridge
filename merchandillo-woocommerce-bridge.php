@@ -3,9 +3,10 @@
  * Plugin Name: Merchandillo Bridge for WooCommerce
  * Plugin URI: https://merchandillo.com
  * Description: Sync WooCommerce order changes to Merchandillo via API key/secret without interrupting checkout flows.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: Merchandillo
  * Author URI: https://merchandillo.com
+ * Update URI: https://github.com/Custom-Services-Limited/merchandillo-woocommerce-bridge
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce

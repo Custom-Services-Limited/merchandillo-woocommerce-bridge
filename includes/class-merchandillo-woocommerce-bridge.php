@@ -26,6 +26,9 @@ final class Merchandillo_WooCommerce_Bridge
     /** @var Merchandillo_Service_Locator|null */
     private $services = null;
 
+    /** @var Merchandillo_Github_Updater|null */
+    private $githubUpdater = null;
+
     public static function instance(): self
     {
         if (null === self::$instance) {
@@ -61,6 +64,10 @@ final class Merchandillo_WooCommerce_Bridge
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         add_action(self::CRON_HOOK, [$this, 'sync_order_now'], 10, 1);
         add_filter('plugin_action_links_' . plugin_basename(MERCHANDILLO_WC_BRIDGE_FILE), [$this, 'add_settings_link']);
+
+        if ($this->should_register_updater_hooks()) {
+            $this->github_updater()->register_hooks();
+        }
     }
 
     public function bootstrap(): void
@@ -438,7 +445,7 @@ final class Merchandillo_WooCommerce_Bridge
             $response = wp_remote_get(
                 $requestEndpoint,
                 [
-                    'timeout' => 20,
+                    'timeout' => 8,
                     'redirection' => 0,
                     'reject_unsafe_urls' => $rejectUnsafeUrls,
                     'headers' => [
@@ -759,7 +766,7 @@ final class Merchandillo_WooCommerce_Bridge
             $endpoint,
             [
                 'method' => 'POST',
-                'timeout' => 20,
+                'timeout' => 8,
                 'redirection' => 0,
                 'reject_unsafe_urls' => $rejectUnsafeUrls,
                 'headers' => [
@@ -948,5 +955,27 @@ final class Merchandillo_WooCommerce_Bridge
         }
 
         return admin_url('edit.php?post_type=shop_order');
+    }
+
+    private function should_register_updater_hooks(): bool
+    {
+        if (function_exists('is_admin') && is_admin()) {
+            return true;
+        }
+
+        if (function_exists('wp_doing_cron') && wp_doing_cron()) {
+            return true;
+        }
+
+        return defined('WP_CLI') && true === WP_CLI;
+    }
+
+    private function github_updater(): Merchandillo_Github_Updater
+    {
+        if (null === $this->githubUpdater) {
+            $this->githubUpdater = new Merchandillo_Github_Updater();
+        }
+
+        return $this->githubUpdater;
     }
 }

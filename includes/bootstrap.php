@@ -28,5 +28,6 @@ require_once __DIR__ . '/class-merchandillo-logs-tab.php';
 require_once __DIR__ . '/class-merchandillo-api-test-notice-renderer.php';
 require_once __DIR__ . '/class-merchandillo-admin-page-renderer.php';
 require_once __DIR__ . '/class-merchandillo-admin-page.php';
+require_once __DIR__ . '/class-merchandillo-github-updater.php';
 require_once __DIR__ . '/class-merchandillo-service-locator.php';
 require_once __DIR__ . '/class-merchandillo-woocommerce-bridge.php';

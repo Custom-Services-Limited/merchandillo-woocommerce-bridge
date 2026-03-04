@@ -10,6 +10,10 @@ if (!defined('MERCHANDILLO_WC_BRIDGE_FILE')) {
     define('MERCHANDILLO_WC_BRIDGE_FILE', dirname(__DIR__) . '/merchandillo-woocommerce-bridge.php');
 }
 
+if (!defined('MERCHANDILLO_WC_BRIDGE_VERSION')) {
+    define('MERCHANDILLO_WC_BRIDGE_VERSION', '0.2.0');
+}
+
 if (!function_exists('mwb_test_default_state')) {
     /**
      * @return array<string,mixed>
@@ -24,6 +28,7 @@ if (!function_exists('mwb_test_default_state')) {
             'settings_fields' => [],
             'options_pages' => [],
             'options' => [],
+            'site_transients' => [],
             'upload_dir' => ['basedir' => sys_get_temp_dir()],
             'wc_log_file_path' => '',
             'current_user_can' => true,
@@ -839,6 +844,40 @@ if (!function_exists('update_option')) {
     function update_option(string $name, $value): bool
     {
         $GLOBALS['mwb_test_state']['options'][$name] = $value;
+        return true;
+    }
+}
+
+if (!function_exists('get_site_transient')) {
+    /**
+     * @return mixed
+     */
+    function get_site_transient(string $transient)
+    {
+        if (!array_key_exists($transient, $GLOBALS['mwb_test_state']['site_transients'])) {
+            return false;
+        }
+
+        return $GLOBALS['mwb_test_state']['site_transients'][$transient];
+    }
+}
+
+if (!function_exists('set_site_transient')) {
+    /**
+     * @param mixed $value
+     */
+    function set_site_transient(string $transient, $value, int $expiration = 0): bool
+    {
+        unset($expiration);
+        $GLOBALS['mwb_test_state']['site_transients'][$transient] = $value;
+        return true;
+    }
+}
+
+if (!function_exists('delete_site_transient')) {
+    function delete_site_transient(string $transient): bool
+    {
+        unset($GLOBALS['mwb_test_state']['site_transients'][$transient]);
         return true;
     }
 }

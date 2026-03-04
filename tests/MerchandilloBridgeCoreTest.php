@@ -22,12 +22,18 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertContains('admin_notices', $actionHooks);
         $this->assertContains('admin_enqueue_scripts', $actionHooks);
         $this->assertContains('merchandillo_sync_order_event', $actionHooks);
+        $this->assertContains('upgrader_process_complete', $actionHooks);
 
-        $this->assertCount(1, $GLOBALS['mwb_test_state']['filters']);
-        $this->assertSame(
-            'plugin_action_links_' . plugin_basename(MERCHANDILLO_WC_BRIDGE_FILE),
-            $GLOBALS['mwb_test_state']['filters'][0][0]
-        );
+        $filtersByHook = [];
+        foreach ($GLOBALS['mwb_test_state']['filters'] as $filter) {
+            $filtersByHook[(string) $filter[0]] = (int) $filter[3];
+        }
+
+        $this->assertArrayHasKey('plugin_action_links_' . plugin_basename(MERCHANDILLO_WC_BRIDGE_FILE), $filtersByHook);
+        $this->assertArrayHasKey('update_plugins_github.com', $filtersByHook);
+        $this->assertArrayHasKey('plugins_api', $filtersByHook);
+        $this->assertSame(4, $filtersByHook['update_plugins_github.com']);
+        $this->assertSame(3, $filtersByHook['plugins_api']);
     }
 
     public function test_activate_sets_default_option_when_missing(): void
@@ -335,5 +341,55 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $differences = $method->invoke($bridge, $localPayload, $remoteOrder);
 
         $this->assertSame([], $differences);
+    }
+
+    public function test_find_remote_order_for_manual_compare_uses_reduced_timeout(): void
+    {
+        $bridge = $this->newBridge();
+        $GLOBALS['mwb_test_state']['remote_get_response'] = [
+            'response' => ['code' => 200],
+            'body' => wp_json_encode(['orders' => []]),
+        ];
+
+        $method = new ReflectionMethod(Merchandillo_WooCommerce_Bridge::class, 'find_remote_order_for_manual_compare');
+        $method->invoke(
+            $bridge,
+            [
+                'api_base_url' => 'https://data.merchandillo.com',
+                'api_key' => 'key',
+                'api_secret' => 'secret',
+            ],
+            [
+                'id' => 77,
+                'order_number' => 'ORD-77',
+            ]
+        );
+
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['remote_get_requests']);
+        $this->assertSame(8, $GLOBALS['mwb_test_state']['remote_get_requests'][0][1]['timeout']);
+    }
+
+    public function test_push_order_to_merchandillo_now_uses_reduced_timeout(): void
+    {
+        $bridge = $this->newBridge();
+        $GLOBALS['mwb_test_state']['options']['merchandillo_sync_options'] = [
+            'enabled' => '1',
+            'api_base_url' => 'https://data.merchandillo.com',
+            'api_key' => 'key',
+            'api_secret' => 'secret',
+            'log_errors' => '1',
+        ];
+        $GLOBALS['mwb_test_state']['wc_get_order_return'] = $this->buildSampleOrder(55);
+        $GLOBALS['mwb_test_state']['remote_post_response'] = [
+            'response' => ['code' => 200],
+            'body' => '',
+        ];
+
+        $method = new ReflectionMethod(Merchandillo_WooCommerce_Bridge::class, 'push_order_to_merchandillo_now');
+        $result = $method->invoke($bridge, 55);
+
+        $this->assertTrue((bool) $result['ok']);
+        $this->assertCount(1, $GLOBALS['mwb_test_state']['remote_post_requests']);
+        $this->assertSame(8, $GLOBALS['mwb_test_state']['remote_post_requests'][0][1]['timeout']);
     }
 }
