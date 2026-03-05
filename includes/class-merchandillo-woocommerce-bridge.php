@@ -191,9 +191,7 @@ final class Merchandillo_WooCommerce_Bridge
             );
         }
 
-        $nonce = function_exists('wp_create_nonce')
-            ? wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION)
-            : self::MANUAL_PUSH_NONCE_ACTION;
+        $nonce = wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION);
 
         return add_query_arg(
             [
@@ -234,9 +232,7 @@ final class Merchandillo_WooCommerce_Bridge
             return;
         }
 
-        $nonce = function_exists('wp_create_nonce')
-            ? wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION)
-            : self::MANUAL_PUSH_NONCE_ACTION;
+        $nonce = wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION);
         $ajaxUrl = admin_url('admin-ajax.php');
 
         echo '<button type="button" class="button mwb-order-push-btn"';
@@ -605,9 +601,7 @@ final class Merchandillo_WooCommerce_Bridge
             return;
         }
 
-        $nonce = function_exists('wp_create_nonce')
-            ? wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION)
-            : self::MANUAL_PUSH_NONCE_ACTION;
+        $nonce = wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION);
         wp_safe_redirect(
             add_query_arg(
                 [
