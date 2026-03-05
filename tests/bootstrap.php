@@ -949,8 +949,16 @@ if (!function_exists('wc_get_order')) {
      */
     function wc_get_order(int $orderId)
     {
-        unset($orderId);
-        return $GLOBALS['mwb_test_state']['wc_get_order_return'];
+        $response = $GLOBALS['mwb_test_state']['wc_get_order_return'];
+        if (is_callable($response)) {
+            return $response($orderId);
+        }
+
+        if (is_array($response) && array_key_exists($orderId, $response)) {
+            return $response[$orderId];
+        }
+
+        return $response;
     }
 }
 
@@ -1036,6 +1044,38 @@ if (!function_exists('wp_json_encode')) {
     {
         $encoded = json_encode($value);
         return false === $encoded ? '' : $encoded;
+    }
+}
+
+if (!function_exists('wp_send_json_success')) {
+    /**
+     * @param array<string,mixed> $value
+     */
+    function wp_send_json_success(array $value, int $statusCode = 200): void
+    {
+        unset($statusCode);
+        echo wp_json_encode(
+            [
+                'success' => true,
+                'data' => $value,
+            ]
+        );
+    }
+}
+
+if (!function_exists('wp_send_json_error')) {
+    /**
+     * @param array<string,mixed> $value
+     */
+    function wp_send_json_error(array $value, int $statusCode = 200): void
+    {
+        unset($statusCode);
+        echo wp_json_encode(
+            [
+                'success' => false,
+                'data' => $value,
+            ]
+        );
     }
 }
 

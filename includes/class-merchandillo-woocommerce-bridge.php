@@ -16,9 +16,16 @@ final class Merchandillo_WooCommerce_Bridge
     private const MANUAL_PUSH_NONCE_ACTION = 'merchandillo_push_order';
     private const MANUAL_COMPARE_AJAX_ACTION = 'merchandillo_compare_order';
     private const MANUAL_PUSH_AJAX_ACTION = 'merchandillo_push_order_now';
+    private const BULK_PUSH_ACTION = 'merchandillo_bulk_push_orders';
+    private const BULK_COMPARE_AJAX_ACTION = 'merchandillo_bulk_compare_orders';
+    private const BULK_PUSH_AJAX_ACTION = 'merchandillo_bulk_push_orders_now';
+    private const BULK_MAX_ORDER_SELECTION = 50;
 
     /** @var bool */
     private static $manualPushModalRendered = false;
+
+    /** @var bool */
+    private static $bulkPushModalRendered = false;
 
     /** @var self|null */
     private static $instance = null;
@@ -57,10 +64,15 @@ final class Merchandillo_WooCommerce_Bridge
         add_action('admin_menu', [$this, 'register_settings_page']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_log_actions']);
+        add_action('admin_init', [$this, 'maybe_handle_bulk_order_push_fallback']);
         add_action('admin_action_' . self::MANUAL_PUSH_ACTION, [$this, 'handle_manual_push_order']);
         add_action('wp_ajax_' . self::MANUAL_COMPARE_AJAX_ACTION, [$this, 'handle_manual_compare_ajax']);
         add_action('wp_ajax_' . self::MANUAL_PUSH_AJAX_ACTION, [$this, 'handle_manual_push_ajax']);
+        add_action('wp_ajax_' . self::BULK_COMPARE_AJAX_ACTION, [$this, 'handle_bulk_compare_ajax']);
+        add_action('wp_ajax_' . self::BULK_PUSH_AJAX_ACTION, [$this, 'handle_bulk_push_ajax']);
         add_action('admin_notices', [$this, 'render_manual_push_notice']);
+        add_action('admin_notices', [$this, 'render_bulk_push_launcher_notice']);
+        add_action('admin_footer', [$this, 'render_bulk_push_launcher_footer']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         add_action(self::CRON_HOOK, [$this, 'sync_order_now'], 10, 1);
         add_filter('plugin_action_links_' . plugin_basename(MERCHANDILLO_WC_BRIDGE_FILE), [$this, 'add_settings_link']);
@@ -80,6 +92,12 @@ final class Merchandillo_WooCommerce_Bridge
         add_action('woocommerce_update_order', [$this, 'queue_order_sync'], 20, 1);
         add_action('woocommerce_order_status_changed', [$this, 'handle_status_change'], 20, 4);
         add_action('woocommerce_order_item_add_action_buttons', [$this, 'render_order_push_button'], 20, 1);
+        add_filter('bulk_actions-edit-shop_order', [$this, 'register_bulk_order_push_action']);
+        add_filter('handle_bulk_actions-edit-shop_order', [$this, 'handle_bulk_order_push_action'], 10, 3);
+        add_filter('bulk_actions-woocommerce_page_wc-orders', [$this, 'register_bulk_order_push_action']);
+        add_filter('handle_bulk_actions-woocommerce_page_wc-orders', [$this, 'handle_bulk_order_push_action'], 10, 3);
+        add_filter('bulk_actions-admin_page_wc-orders', [$this, 'register_bulk_order_push_action']);
+        add_filter('handle_bulk_actions-admin_page_wc-orders', [$this, 'handle_bulk_order_push_action'], 10, 3);
     }
 
     public function register_translations(): void
@@ -131,6 +149,61 @@ final class Merchandillo_WooCommerce_Bridge
         $links[] = '<a href="' . esc_url($url) . '">' . esc_html__('Settings', 'merchandillo-woocommerce-bridge') . '</a>';
 
         return $links;
+    }
+
+    /**
+     * @param array<string,string> $actions
+     * @return array<string,string>
+     */
+    public function register_bulk_order_push_action(array $actions): array
+    {
+        $actions[self::BULK_PUSH_ACTION] = __('Send to Merchandillo', 'merchandillo-woocommerce-bridge');
+
+        return $actions;
+    }
+
+    /**
+     * @param array<int,mixed> $orderIds
+     */
+    public function handle_bulk_order_push_action(string $redirectTo, string $action, array $orderIds): string
+    {
+        if (self::BULK_PUSH_ACTION !== $action) {
+            return $redirectTo;
+        }
+
+        if (!$this->can_manage_manual_push()) {
+            return add_query_arg(
+                [
+                    'merchandillo_bulk_status' => 'forbidden',
+                ],
+                $redirectTo
+            );
+        }
+
+        $allOrderIds = $this->parse_bulk_order_ids_from_request($orderIds, 5000);
+        $selectedOrderIds = array_slice($allOrderIds, 0, self::BULK_MAX_ORDER_SELECTION);
+        if (empty($selectedOrderIds)) {
+            return add_query_arg(
+                [
+                    'merchandillo_bulk_status' => 'empty_selection',
+                ],
+                $redirectTo
+            );
+        }
+
+        $nonce = function_exists('wp_create_nonce')
+            ? wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION)
+            : self::MANUAL_PUSH_NONCE_ACTION;
+
+        return add_query_arg(
+            [
+                'merchandillo_bulk_push' => '1',
+                'merchandillo_bulk_ids' => implode(',', $selectedOrderIds),
+                'merchandillo_bulk_nonce' => (string) $nonce,
+                'merchandillo_bulk_truncated' => count($allOrderIds) > count($selectedOrderIds) ? '1' : '0',
+            ],
+            $redirectTo
+        );
     }
 
     public function handle_status_change(int $orderId, string $oldStatus, string $newStatus): void
@@ -342,6 +415,622 @@ final class Merchandillo_WooCommerce_Bridge
         }
 
         $this->send_json_response(true, ['message' => sprintf(__('Order #%d was pushed to Merchandillo.', 'merchandillo-woocommerce-bridge'), $orderId)]);
+    }
+
+    public function render_bulk_push_launcher_notice(): void
+    {
+        $status = isset($_GET['merchandillo_bulk_status'])
+            ? sanitize_key((string) wp_unslash($_GET['merchandillo_bulk_status']))
+            : '';
+
+        if ('empty_selection' === $status) {
+            $this->render_admin_notice(
+                __('Bulk push skipped because no valid orders were selected.', 'merchandillo-woocommerce-bridge'),
+                'notice-error'
+            );
+        } elseif ('forbidden' === $status) {
+            $this->render_admin_notice(
+                __('You are not allowed to perform this action.', 'merchandillo-woocommerce-bridge'),
+                'notice-error'
+            );
+        }
+
+        $shouldLaunch = isset($_GET['merchandillo_bulk_push'])
+            && '1' === (string) wp_unslash($_GET['merchandillo_bulk_push']);
+        if (!$shouldLaunch) {
+            return;
+        }
+
+        $launch = $this->bulk_push_launch_context_from_query();
+        if (!$launch['ok']) {
+            $this->render_admin_notice(
+                __('Security check failed. Please refresh the page and try again.', 'merchandillo-woocommerce-bridge'),
+                'notice-error'
+            );
+            return;
+        }
+
+        if (isset($_GET['merchandillo_bulk_truncated']) && '1' === (string) wp_unslash($_GET['merchandillo_bulk_truncated'])) {
+            $this->render_admin_notice(
+                sprintf(__('Only the first %d selected orders will be processed in one run.', 'merchandillo-woocommerce-bridge'), self::BULK_MAX_ORDER_SELECTION),
+                'notice-warning'
+            );
+        }
+
+        $this->render_admin_notice(
+            sprintf(__('Bulk push started for %d selected order(s).', 'merchandillo-woocommerce-bridge'), count($launch['order_ids'])),
+            'notice-info'
+        );
+
+        $this->render_bulk_push_modal($launch['order_ids'], $launch['nonce']);
+    }
+
+    public function render_bulk_push_launcher_footer(): void
+    {
+        $launch = $this->bulk_push_launch_context_from_query();
+        if (!$launch['ok']) {
+            return;
+        }
+
+        $this->render_bulk_push_modal($launch['order_ids'], $launch['nonce']);
+    }
+
+    public function handle_bulk_compare_ajax(): void
+    {
+        if (!$this->can_manage_manual_push()) {
+            $this->send_json_response(false, ['message' => __('You are not allowed to perform this action.', 'merchandillo-woocommerce-bridge')], 403);
+            return;
+        }
+
+        if (!$this->is_manual_push_nonce_valid()) {
+            $this->send_json_response(false, ['message' => __('Security check failed. Please refresh the page and try again.', 'merchandillo-woocommerce-bridge')], 403);
+            return;
+        }
+
+        $rawOrderIds = isset($_POST['order_ids']) ? wp_unslash($_POST['order_ids']) : [];
+        $orderIds = $this->parse_bulk_order_ids_from_request($rawOrderIds, self::BULK_MAX_ORDER_SELECTION);
+        if (empty($orderIds)) {
+            $this->send_json_response(false, ['message' => __('No valid order ids were provided.', 'merchandillo-woocommerce-bridge')], 400);
+            return;
+        }
+
+        $compareResult = $this->build_bulk_compare_result($orderIds);
+        if (!$compareResult['ok']) {
+            $this->send_json_response(false, ['message' => $compareResult['message']], 400);
+            return;
+        }
+
+        $this->send_json_response(true, [
+            'message' => $compareResult['message'],
+            'summary' => $compareResult['summary'],
+            'orders' => $compareResult['orders'],
+            'not_found_order_ids' => $compareResult['not_found_order_ids'],
+            'different_order_ids' => $compareResult['different_order_ids'],
+            'identical_order_ids' => $compareResult['identical_order_ids'],
+        ]);
+    }
+
+    public function handle_bulk_push_ajax(): void
+    {
+        if (!$this->can_manage_manual_push()) {
+            $this->send_json_response(false, ['message' => __('You are not allowed to perform this action.', 'merchandillo-woocommerce-bridge')], 403);
+            return;
+        }
+
+        if (!$this->is_manual_push_nonce_valid()) {
+            $this->send_json_response(false, ['message' => __('Security check failed. Please refresh the page and try again.', 'merchandillo-woocommerce-bridge')], 403);
+            return;
+        }
+
+        $rawOrderIds = isset($_POST['order_ids']) ? wp_unslash($_POST['order_ids']) : [];
+        $orderIds = $this->parse_bulk_order_ids_from_request($rawOrderIds, self::BULK_MAX_ORDER_SELECTION);
+        if (empty($orderIds)) {
+            $this->send_json_response(false, ['message' => __('No valid order ids were provided.', 'merchandillo-woocommerce-bridge')], 400);
+            return;
+        }
+
+        $results = [];
+        $pushed = 0;
+        $failed = 0;
+
+        foreach ($orderIds as $orderId) {
+            $pushResult = $this->push_order_to_merchandillo_now($orderId);
+            if ($pushResult['ok']) {
+                $pushed++;
+                $results[] = [
+                    'order_id' => $orderId,
+                    'ok' => true,
+                    'message' => sprintf(__('Order #%d was pushed to Merchandillo.', 'merchandillo-woocommerce-bridge'), $orderId),
+                ];
+                continue;
+            }
+
+            $failed++;
+            $results[] = [
+                'order_id' => $orderId,
+                'ok' => false,
+                'message' => $pushResult['message'],
+            ];
+        }
+
+        $payload = [
+            'message' => sprintf(__('Bulk push finished. %1$d pushed, %2$d failed.', 'merchandillo-woocommerce-bridge'), $pushed, $failed),
+            'summary' => [
+                'requested' => count($orderIds),
+                'pushed' => $pushed,
+                'failed' => $failed,
+            ],
+            'results' => $results,
+        ];
+
+        if (0 === $pushed) {
+            $this->send_json_response(false, $payload, 400);
+            return;
+        }
+
+        $this->send_json_response(true, $payload);
+    }
+
+    public function maybe_handle_bulk_order_push_fallback(): void
+    {
+        if (!$this->can_manage_manual_push()) {
+            return;
+        }
+
+        $action = isset($_REQUEST['action']) ? sanitize_key((string) wp_unslash($_REQUEST['action'])) : '';
+        if ('' === $action || '-1' === $action) {
+            $action = isset($_REQUEST['action2']) ? sanitize_key((string) wp_unslash($_REQUEST['action2'])) : '';
+        }
+
+        if (self::BULK_PUSH_ACTION !== $action) {
+            return;
+        }
+
+        $allOrderIds = $this->parse_bulk_order_ids_from_request(
+            $_REQUEST['post'] ?? $_REQUEST['id'] ?? $_REQUEST['order_id'] ?? [],
+            5000
+        );
+        $selectedOrderIds = array_slice($allOrderIds, 0, self::BULK_MAX_ORDER_SELECTION);
+
+        $redirectTo = $this->bulk_push_redirect_url();
+        if (empty($selectedOrderIds)) {
+            wp_safe_redirect(
+                add_query_arg(
+                    [
+                        'merchandillo_bulk_status' => 'empty_selection',
+                    ],
+                    $redirectTo
+                )
+            );
+            return;
+        }
+
+        $nonce = function_exists('wp_create_nonce')
+            ? wp_create_nonce(self::MANUAL_PUSH_NONCE_ACTION)
+            : self::MANUAL_PUSH_NONCE_ACTION;
+        wp_safe_redirect(
+            add_query_arg(
+                [
+                    'merchandillo_bulk_push' => '1',
+                    'merchandillo_bulk_ids' => implode(',', $selectedOrderIds),
+                    'merchandillo_bulk_nonce' => (string) $nonce,
+                    'merchandillo_bulk_truncated' => count($allOrderIds) > count($selectedOrderIds) ? '1' : '0',
+                ],
+                $redirectTo
+            )
+        );
+    }
+
+    /**
+     * @param array<int,int> $orderIds
+     */
+    private function render_bulk_push_modal(array $orderIds, string $nonce): void
+    {
+        if (self::$bulkPushModalRendered) {
+            return;
+        }
+        self::$bulkPushModalRendered = true;
+
+        $i18n = [
+            'title' => __('Bulk Push Orders to Merchandillo', 'merchandillo-woocommerce-bridge'),
+            'cancel' => __('Cancel', 'merchandillo-woocommerce-bridge'),
+            'checkingOrders' => __('Checking selected orders in Merchandillo...', 'merchandillo-woocommerce-bridge'),
+            'requestFailed' => __('Request failed.', 'merchandillo-woocommerce-bridge'),
+            'unexpectedResponse' => __('Unexpected response.', 'merchandillo-woocommerce-bridge'),
+            'summaryTitle' => __('Comparison summary', 'merchandillo-woocommerce-bridge'),
+            'autoPushingMissing' => __('Sending orders that do not exist in Merchandillo yet...', 'merchandillo-woocommerce-bridge'),
+            'differencesRequireAction' => __('Some orders have differences. Review and confirm overwrite.', 'merchandillo-woocommerce-bridge'),
+            'noDifferencesDone' => __('No differing orders found. Bulk run finished.', 'merchandillo-woocommerce-bridge'),
+            'overwriteDiffering' => __('Overwrite differing orders in Merchandillo', 'merchandillo-woocommerce-bridge'),
+            'overwriteInProgress' => __('Overwriting differing orders...', 'merchandillo-woocommerce-bridge'),
+            'autoPushSummary' => __('Auto-push result:', 'merchandillo-woocommerce-bridge'),
+            'overwriteSummary' => __('Overwrite result:', 'merchandillo-woocommerce-bridge'),
+            'fieldLabel' => __('Field', 'merchandillo-woocommerce-bridge'),
+            'merchandilloLabel' => __('Merchandillo', 'merchandillo-woocommerce-bridge'),
+            'woocommerceLabel' => __('WooCommerce', 'merchandillo-woocommerce-bridge'),
+            'orderLabel' => __('Order', 'merchandillo-woocommerce-bridge'),
+            'stateLabel' => __('State', 'merchandillo-woocommerce-bridge'),
+            'messageLabel' => __('Message', 'merchandillo-woocommerce-bridge'),
+            'errorLabel' => __('Error:', 'merchandillo-woocommerce-bridge'),
+            'successLabel' => __('Success:', 'merchandillo-woocommerce-bridge'),
+        ];
+
+        $textAlign = function_exists('is_rtl') && is_rtl() ? 'right' : 'left';
+        $ajaxUrl = admin_url('admin-ajax.php');
+
+        echo '<div id="mwb-bulk-order-push-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.45);text-align:' . esc_attr($textAlign) . ';">';
+        echo '<div style="max-width:900px;width:94%;margin:5vh auto;background:#fff;border-radius:14px;box-shadow:0 18px 40px rgba(15,23,42,.25);overflow:hidden;text-align:' . esc_attr($textAlign) . ';">';
+        echo '<div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;gap:10px;">';
+        echo '<h2 style="margin:0;font-size:18px;line-height:1.3;">' . esc_html__('Bulk Push Orders to Merchandillo', 'merchandillo-woocommerce-bridge') . '</h2>';
+        echo '<button type="button" id="mwb-bulk-order-push-close" class="button" style="min-width:32px;padding:0 10px;">&times;</button>';
+        echo '</div>';
+        echo '<div id="mwb-bulk-order-push-content" style="padding:16px 18px;max-height:58vh;overflow:auto;color:#0f172a;"></div>';
+        echo '<div style="padding:14px 18px;border-top:1px solid #e2e8f0;display:flex;justify-content:flex-end;gap:8px;">';
+        echo '<button type="button" id="mwb-bulk-order-push-cancel" class="button">' . esc_html__('Cancel', 'merchandillo-woocommerce-bridge') . '</button>';
+        echo '<button type="button" id="mwb-bulk-order-push-confirm" class="button button-primary" style="display:none;background:rgb(77, 121, 170);border-color:rgb(77, 121, 170);">' . esc_html__('Overwrite differing orders in Merchandillo', 'merchandillo-woocommerce-bridge') . '</button>';
+        echo '</div>';
+        echo '</div>';
+        echo '</div>';
+        echo '<script>(function(){';
+        echo 'var t=' . wp_json_encode($i18n) . ';';
+        echo 'var modal=document.getElementById("mwb-bulk-order-push-modal");if(!modal){return;}';
+        echo 'var content=document.getElementById("mwb-bulk-order-push-content");var confirmBtn=document.getElementById("mwb-bulk-order-push-confirm");var closeBtn=document.getElementById("mwb-bulk-order-push-close");var cancelBtn=document.getElementById("mwb-bulk-order-push-cancel");';
+        echo 'var state={orderIds:' . wp_json_encode(array_values($orderIds)) . ',nonce:' . wp_json_encode($nonce) . ',ajaxUrl:' . wp_json_encode($ajaxUrl) . ',differentOrderIds:[]};';
+        echo 'function esc(s){return String(s===undefined?"":s).replace(/[&<>]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;"})[c];});}';
+        echo 'function open(){modal.style.display="block";document.body.style.overflow="hidden";}';
+        echo 'function close(){modal.style.display="none";document.body.style.overflow="";confirmBtn.style.display="none";confirmBtn.disabled=false;}';
+        echo 'function post(action,data){var body=new URLSearchParams();Object.keys(data||{}).forEach(function(k){body.append(k,data[k]);});body.append("action",action);return fetch(state.ajaxUrl,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded; charset=UTF-8"},body:body.toString(),credentials:"same-origin"}).then(function(r){return r.json();});}';
+        echo 'function renderSummary(summary){if(!summary){return "";}var html="<h3 style=\'margin:6px 0 10px;font-size:15px;\'>"+esc(t.summaryTitle)+"</h3>";html+="<ul style=\'margin:0 0 10px 18px;padding:0;line-height:1.6;\'><li>Total: "+esc(summary.total||0)+"</li><li>Not found: "+esc(summary.not_found||0)+"</li><li>Identical: "+esc(summary.identical||0)+"</li><li>Different: "+esc(summary.different||0)+"</li><li>Invalid: "+esc(summary.invalid||0)+"</li><li>Compare errors: "+esc(summary.compare_errors||0)+"</li></ul>";return html;}';
+        echo 'function renderOrderRows(orders){if(!orders||!orders.length){return "";}var rows=orders.map(function(item){return "<tr><td style=\'padding:6px;border:1px solid #e2e8f0;white-space:nowrap;\'>#"+esc(item.order_id||0)+"</td><td style=\'padding:6px;border:1px solid #e2e8f0;white-space:nowrap;\'><code>"+esc(item.state||"")+"</code></td><td style=\'padding:6px;border:1px solid #e2e8f0;\'><span>"+esc(item.message||"")+"</span></td></tr>";}).join("");return "<div style=\'overflow:auto;max-height:240px;margin-top:8px;\'><table style=\'width:100%;border-collapse:collapse;font-size:12px;\'><thead><tr><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.orderLabel)+"</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.stateLabel)+"</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.messageLabel)+"</th></tr></thead><tbody>"+rows+"</tbody></table></div>";}';
+        echo 'function renderDifferences(orders){if(!orders||!orders.length){return "";}var blocks=[];orders.forEach(function(item){if(item.state!=="different"||!item.differences||!item.differences.length){return;}var rows=item.differences.map(function(d){return "<tr><td style=\'padding:6px;border:1px solid #e2e8f0;white-space:nowrap;\'><code>"+esc(d.field)+"</code></td><td style=\'padding:6px;border:1px solid #e2e8f0;\'><code>"+esc(d.remote)+"</code></td><td style=\'padding:6px;border:1px solid #e2e8f0;\'><code>"+esc(d.local)+"</code></td></tr>";}).join("");blocks.push("<details style=\'margin:10px 0;\'><summary><strong>#"+esc(item.order_id||0)+"</strong></summary><div style=\'overflow:auto;max-height:220px;margin-top:6px;\'><table style=\'width:100%;border-collapse:collapse;font-size:12px;\'><thead><tr><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.fieldLabel)+"</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.merchandilloLabel)+"</th><th style=\'padding:6px;border:1px solid #e2e8f0;text-align:left;\'>"+esc(t.woocommerceLabel)+"</th></tr></thead><tbody>"+rows+"</tbody></table></div></details>");});return blocks.join("");}';
+        echo 'function renderPushResult(res,prefix){if(!res){return "";}var data=(res.data&&typeof res.data==="object")?res.data:{};var summary=(data.summary&&typeof data.summary==="object")?data.summary:{};var requested=Number(summary.requested||0);var pushed=Number(summary.pushed||0);var failed=Number(summary.failed||0);var cls=res.success?"#166534":"#b91c1c";var bg=res.success?"#f0fdf4":"#fef2f2";var border=res.success?"#bbf7d0":"#fecaca";var msg=(data.message&&String(data.message).trim()!=="")?String(data.message):"";var html="<div style=\'margin-top:10px;padding:10px;border:1px solid "+border+";background:"+bg+";color:"+cls+";border-radius:8px;\'><strong>"+esc(prefix)+"</strong> "+esc(msg)+"<div>Requested: "+esc(requested)+" | Pushed: "+esc(pushed)+" | Failed: "+esc(failed)+"</div></div>";if(Array.isArray(data.results)&&data.results.length){var items=data.results.map(function(item){var ok=item&&item.ok;return "<li><code>#"+esc(item&&item.order_id?item.order_id:0)+"</code> "+(ok?"ok":"failed")+" - "+esc(item&&item.message?item.message:"")+"</li>";}).join("");html+="<ul style=\'margin:8px 0 0 18px;padding:0;max-height:180px;overflow:auto;line-height:1.5;\'>"+items+"</ul>";}return html;}';
+        echo 'function pushOrders(orderIds){if(!orderIds||!orderIds.length){return Promise.resolve({success:true,data:{summary:{requested:0,pushed:0,failed:0},results:[]}});}return post("' . esc_js(self::BULK_PUSH_AJAX_ACTION) . '",{nonce:state.nonce,order_ids:orderIds.join(",")});}';
+        echo 'function finalizeComparison(data){var different=Array.isArray(data.different_order_ids)?data.different_order_ids:[];state.differentOrderIds=different;if(!different.length){content.innerHTML+="<div style=\'margin-top:10px;padding:10px;border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:8px;\'><strong>"+esc(t.successLabel)+"</strong> "+esc(t.noDifferencesDone)+"</div>";return;}content.innerHTML+="<p style=\'margin-top:12px;\'><strong>"+esc(t.differencesRequireAction)+"</strong></p>"+renderDifferences(data.orders||[]);confirmBtn.textContent=t.overwriteDiffering;confirmBtn.style.display="inline-block";}';
+        echo 'function runCompare(){content.innerHTML="<p>"+esc(t.checkingOrders)+"</p>";confirmBtn.style.display="none";post("' . esc_js(self::BULK_COMPARE_AJAX_ACTION) . '",{nonce:state.nonce,order_ids:state.orderIds.join(",")}).then(function(res){if(!res||!res.success){throw new Error((res&&res.data&&res.data.message)?res.data.message:t.requestFailed);}var data=(res.data&&typeof res.data==="object")?res.data:{};content.innerHTML="<p>"+esc(data.message||"")+"</p>"+renderSummary(data.summary||{})+renderOrderRows(data.orders||[]);var missing=Array.isArray(data.not_found_order_ids)?data.not_found_order_ids:[];if(!missing.length){finalizeComparison(data);return;}content.innerHTML+="<p>"+esc(t.autoPushingMissing)+"</p>";return pushOrders(missing).then(function(pushRes){content.innerHTML+=renderPushResult(pushRes,t.autoPushSummary);finalizeComparison(data);});}).catch(function(err){content.innerHTML="<div style=\'padding:10px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:8px;\'><strong>"+esc(t.errorLabel)+"</strong> "+esc(err.message||t.unexpectedResponse)+"</div>";});}';
+        echo 'confirmBtn.addEventListener("click",function(e){e.preventDefault();confirmBtn.disabled=true;content.innerHTML+="<p>"+esc(t.overwriteInProgress)+"</p>";pushOrders(state.differentOrderIds).then(function(res){content.innerHTML+=renderPushResult(res,t.overwriteSummary);confirmBtn.style.display="none";confirmBtn.disabled=false;}).catch(function(err){confirmBtn.disabled=false;content.innerHTML+="<div style=\'padding:10px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:8px;\'><strong>"+esc(t.errorLabel)+"</strong> "+esc(err.message||t.requestFailed)+"</div>";});});';
+        echo 'closeBtn.addEventListener("click",function(e){e.preventDefault();close();});cancelBtn.addEventListener("click",function(e){e.preventDefault();close();});modal.addEventListener("click",function(e){if(e.target===modal){close();}});';
+        echo 'open();runCompare();';
+        echo '})();</script>';
+    }
+
+    /**
+     * @param mixed $rawOrderIds
+     * @return array<int,int>
+     */
+    private function parse_bulk_order_ids_from_request($rawOrderIds, int $max = self::BULK_MAX_ORDER_SELECTION): array
+    {
+        if ($max <= 0) {
+            return [];
+        }
+
+        $values = [];
+        if (is_array($rawOrderIds)) {
+            $values = $rawOrderIds;
+        } elseif (is_string($rawOrderIds) && '' !== trim($rawOrderIds)) {
+            $values = explode(',', $rawOrderIds);
+        }
+
+        $orderIds = [];
+        $seen = [];
+        foreach ($values as $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $orderId = absint((string) $value);
+            if ($orderId <= 0 || isset($seen[$orderId])) {
+                continue;
+            }
+
+            $seen[$orderId] = true;
+            $orderIds[] = $orderId;
+            if (count($orderIds) >= $max) {
+                break;
+            }
+        }
+
+        return $orderIds;
+    }
+
+    /**
+     * @param array<int,int> $orderIds
+     * @return array{
+     *     ok:bool,
+     *     message:string,
+     *     summary:array<string,int>,
+     *     orders:array<int,array<string,mixed>>,
+     *     not_found_order_ids:array<int,int>,
+     *     different_order_ids:array<int,int>,
+     *     identical_order_ids:array<int,int>
+     * }
+     */
+    private function build_bulk_compare_result(array $orderIds): array
+    {
+        $settings = $this->service_locator()->settings()->get();
+        if ('1' !== (string) $settings['enabled']) {
+            return [
+                'ok' => false,
+                'message' => __('Sync is disabled in plugin settings.', 'merchandillo-woocommerce-bridge'),
+                'summary' => [],
+                'orders' => [],
+                'not_found_order_ids' => [],
+                'different_order_ids' => [],
+                'identical_order_ids' => [],
+            ];
+        }
+
+        if (!$this->has_required_api_settings($settings)) {
+            return [
+                'ok' => false,
+                'message' => __('API credentials are incomplete.', 'merchandillo-woocommerce-bridge'),
+                'summary' => [],
+                'orders' => [],
+                'not_found_order_ids' => [],
+                'different_order_ids' => [],
+                'identical_order_ids' => [],
+            ];
+        }
+
+        $remoteIndex = $this->build_remote_order_index($settings);
+        if (!$remoteIndex['ok']) {
+            return [
+                'ok' => false,
+                'message' => $remoteIndex['message'],
+                'summary' => [],
+                'orders' => [],
+                'not_found_order_ids' => [],
+                'different_order_ids' => [],
+                'identical_order_ids' => [],
+            ];
+        }
+
+        $summary = [
+            'total' => count($orderIds),
+            'not_found' => 0,
+            'identical' => 0,
+            'different' => 0,
+            'invalid' => 0,
+            'compare_errors' => 0,
+        ];
+        $orders = [];
+        $notFoundOrderIds = [];
+        $differentOrderIds = [];
+        $identicalOrderIds = [];
+
+        foreach ($orderIds as $orderId) {
+            $context = $this->build_manual_push_context($orderId);
+            if (!$context['ok']) {
+                $summary['invalid']++;
+                $orders[] = [
+                    'order_id' => $orderId,
+                    'state' => 'invalid',
+                    'message' => $context['message'],
+                    'differences' => [],
+                ];
+                continue;
+            }
+
+            $remoteOrder = $this->find_remote_order_from_index(
+                $context['payload'],
+                $remoteIndex['by_id'],
+                $remoteIndex['by_order_number']
+            );
+            if (null === $remoteOrder) {
+                $summary['not_found']++;
+                $notFoundOrderIds[] = $orderId;
+                $orders[] = [
+                    'order_id' => $orderId,
+                    'state' => 'not_found',
+                    'message' => __('This order does not exist in Merchandillo yet. You can push it now.', 'merchandillo-woocommerce-bridge'),
+                    'differences' => [],
+                ];
+                continue;
+            }
+
+            $differences = $this->calculate_payload_differences($context['payload'], $remoteOrder);
+            if (empty($differences)) {
+                $summary['identical']++;
+                $identicalOrderIds[] = $orderId;
+                $orders[] = [
+                    'order_id' => $orderId,
+                    'state' => 'identical',
+                    'message' => __('Order already exists in Merchandillo and no differences were detected.', 'merchandillo-woocommerce-bridge'),
+                    'differences' => [],
+                ];
+                continue;
+            }
+
+            $summary['different']++;
+            $differentOrderIds[] = $orderId;
+            $orders[] = [
+                'order_id' => $orderId,
+                'state' => 'different',
+                'message' => __('Order exists in Merchandillo and differences were found. Review them before overwriting.', 'merchandillo-woocommerce-bridge'),
+                'differences' => $differences,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'message' => __('Bulk comparison finished.', 'merchandillo-woocommerce-bridge'),
+            'summary' => $summary,
+            'orders' => $orders,
+            'not_found_order_ids' => $notFoundOrderIds,
+            'different_order_ids' => $differentOrderIds,
+            'identical_order_ids' => $identicalOrderIds,
+        ];
+    }
+
+    /**
+     * @param array<string,string> $settings
+     * @return array{
+     *     ok:bool,
+     *     message:string,
+     *     by_id:array<int,array<string,mixed>>,
+     *     by_order_number:array<string,array<string,mixed>>
+     * }
+     */
+    private function build_remote_order_index(array $settings): array
+    {
+        $endpoint = rtrim((string) $settings['api_base_url'], '/') . '/api/woocommerce/orders';
+        $page = 1;
+        $limit = 50;
+        $maxPages = 10;
+        $byId = [];
+        $byOrderNumber = [];
+
+        while ($page <= $maxPages) {
+            $requestEndpoint = add_query_arg(
+                [
+                    'page' => (string) $page,
+                    'limit' => (string) $limit,
+                ],
+                $endpoint
+            );
+            $rejectUnsafeUrls = !$this->is_local_dev_endpoint($endpoint);
+            $response = wp_remote_get(
+                $requestEndpoint,
+                [
+                    'timeout' => 8,
+                    'redirection' => 0,
+                    'reject_unsafe_urls' => $rejectUnsafeUrls,
+                    'headers' => [
+                        'Accept' => 'application/json',
+                        'X-API-Key' => (string) $settings['api_key'],
+                        'X-API-Secret' => (string) $settings['api_secret'],
+                    ],
+                ]
+            );
+
+            if (is_wp_error($response)) {
+                return [
+                    'ok' => false,
+                    'message' => __('Could not read orders from Merchandillo.', 'merchandillo-woocommerce-bridge') . ' ' . $response->get_error_message(),
+                    'by_id' => [],
+                    'by_order_number' => [],
+                ];
+            }
+
+            $statusCode = (int) wp_remote_retrieve_response_code($response);
+            if ($statusCode < 200 || $statusCode >= 300) {
+                return [
+                    'ok' => false,
+                    'message' => sprintf(__('Could not read orders from Merchandillo (HTTP %d).', 'merchandillo-woocommerce-bridge'), $statusCode),
+                    'by_id' => [],
+                    'by_order_number' => [],
+                ];
+            }
+
+            $body = (string) wp_remote_retrieve_body($response);
+            $decoded = json_decode($body, true);
+            if (!is_array($decoded)) {
+                return [
+                    'ok' => false,
+                    'message' => __('Merchandillo returned an invalid response while reading orders.', 'merchandillo-woocommerce-bridge'),
+                    'by_id' => [],
+                    'by_order_number' => [],
+                ];
+            }
+
+            $orders = isset($decoded['orders']) && is_array($decoded['orders']) ? $decoded['orders'] : [];
+            foreach ($orders as $remoteOrder) {
+                if (!is_array($remoteOrder)) {
+                    continue;
+                }
+
+                $remoteId = isset($remoteOrder['id']) ? (int) $remoteOrder['id'] : 0;
+                if ($remoteId > 0 && !isset($byId[$remoteId])) {
+                    $byId[$remoteId] = $remoteOrder;
+                }
+
+                $remoteOrderNumber = isset($remoteOrder['order_number']) ? trim((string) $remoteOrder['order_number']) : '';
+                if ('' !== $remoteOrderNumber && !isset($byOrderNumber[$remoteOrderNumber])) {
+                    $byOrderNumber[$remoteOrderNumber] = $remoteOrder;
+                }
+            }
+
+            $totalPages = isset($decoded['totalPages']) ? (int) $decoded['totalPages'] : 0;
+            if ($totalPages > 0 && $page >= $totalPages) {
+                break;
+            }
+            if (count($orders) < $limit) {
+                break;
+            }
+
+            $page++;
+        }
+
+        return [
+            'ok' => true,
+            'message' => '',
+            'by_id' => $byId,
+            'by_order_number' => $byOrderNumber,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @param array<int,array<string,mixed>> $byId
+     * @param array<string,array<string,mixed>> $byOrderNumber
+     * @return array<string,mixed>|null
+     */
+    private function find_remote_order_from_index(array $payload, array $byId, array $byOrderNumber): ?array
+    {
+        $targetId = isset($payload['id']) ? (int) $payload['id'] : 0;
+        if ($targetId > 0 && isset($byId[$targetId])) {
+            return $byId[$targetId];
+        }
+
+        $targetOrderNumber = isset($payload['order_number']) ? trim((string) $payload['order_number']) : '';
+        if ('' !== $targetOrderNumber && isset($byOrderNumber[$targetOrderNumber])) {
+            return $byOrderNumber[$targetOrderNumber];
+        }
+
+        return null;
+    }
+
+    private function render_admin_notice(string $message, string $noticeClass): void
+    {
+        if ('' === trim($message)) {
+            return;
+        }
+
+        echo '<div class="notice ' . esc_attr($noticeClass) . ' is-dismissible"><p>';
+        echo esc_html($message);
+        echo '</p></div>';
+    }
+
+    /**
+     * @return array{ok:bool,order_ids:array<int,int>,nonce:string}
+     */
+    private function bulk_push_launch_context_from_query(): array
+    {
+        $shouldLaunch = isset($_GET['merchandillo_bulk_push'])
+            && '1' === (string) wp_unslash($_GET['merchandillo_bulk_push']);
+        if (!$shouldLaunch) {
+            return [
+                'ok' => false,
+                'order_ids' => [],
+                'nonce' => '',
+            ];
+        }
+
+        $rawIds = isset($_GET['merchandillo_bulk_ids']) ? wp_unslash($_GET['merchandillo_bulk_ids']) : '';
+        $orderIds = $this->parse_bulk_order_ids_from_request($rawIds, self::BULK_MAX_ORDER_SELECTION);
+        $nonce = isset($_GET['merchandillo_bulk_nonce']) ? sanitize_text_field((string) wp_unslash($_GET['merchandillo_bulk_nonce'])) : '';
+
+        if (empty($orderIds) || '' === $nonce) {
+            return [
+                'ok' => false,
+                'order_ids' => [],
+                'nonce' => '',
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'order_ids' => $orderIds,
+            'nonce' => $nonce,
+        ];
     }
 
     private function service_locator(): Merchandillo_Service_Locator
@@ -952,6 +1641,18 @@ final class Merchandillo_WooCommerce_Bridge
                 ],
                 admin_url('post.php')
             );
+        }
+
+        return admin_url('edit.php?post_type=shop_order');
+    }
+
+    private function bulk_push_redirect_url(): string
+    {
+        if (function_exists('wp_get_referer')) {
+            $referer = wp_get_referer();
+            if (is_string($referer) && '' !== $referer) {
+                return $referer;
+            }
         }
 
         return admin_url('edit.php?post_type=shop_order');

@@ -19,7 +19,10 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertContains('admin_menu', $actionHooks);
         $this->assertContains('admin_init', $actionHooks);
         $this->assertContains('admin_action_merchandillo_push_order', $actionHooks);
+        $this->assertContains('wp_ajax_merchandillo_bulk_compare_orders', $actionHooks);
+        $this->assertContains('wp_ajax_merchandillo_bulk_push_orders_now', $actionHooks);
         $this->assertContains('admin_notices', $actionHooks);
+        $this->assertContains('admin_footer', $actionHooks);
         $this->assertContains('admin_enqueue_scripts', $actionHooks);
         $this->assertContains('merchandillo_sync_order_event', $actionHooks);
         $this->assertContains('upgrader_process_complete', $actionHooks);
@@ -101,6 +104,20 @@ final class MerchandilloBridgeCoreTest extends MerchandilloTestCase
         $this->assertContains('woocommerce_update_order', $hooks);
         $this->assertContains('woocommerce_order_status_changed', $hooks);
         $this->assertContains('woocommerce_order_item_add_action_buttons', $hooks);
+
+        $filterHooks = array_map(
+            static function (array $filter): string {
+                return (string) $filter[0];
+            },
+            $GLOBALS['mwb_test_state']['filters']
+        );
+
+        $this->assertContains('bulk_actions-edit-shop_order', $filterHooks);
+        $this->assertContains('handle_bulk_actions-edit-shop_order', $filterHooks);
+        $this->assertContains('bulk_actions-woocommerce_page_wc-orders', $filterHooks);
+        $this->assertContains('handle_bulk_actions-woocommerce_page_wc-orders', $filterHooks);
+        $this->assertContains('bulk_actions-admin_page_wc-orders', $filterHooks);
+        $this->assertContains('handle_bulk_actions-admin_page_wc-orders', $filterHooks);
     }
 
     public function test_render_order_push_button_outputs_action_link(): void
