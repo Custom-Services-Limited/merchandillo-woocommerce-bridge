@@ -890,7 +890,7 @@ final class Merchandillo_WooCommerce_Bridge
             $response = wp_remote_get(
                 $requestEndpoint,
                 [
-                    'timeout' => 8,
+                    'timeout' => 3,
                     'redirection' => 0,
                     'reject_unsafe_urls' => $rejectUnsafeUrls,
                     'headers' => [
@@ -1134,7 +1134,7 @@ final class Merchandillo_WooCommerce_Bridge
             $response = wp_remote_get(
                 $requestEndpoint,
                 [
-                    'timeout' => 8,
+                    'timeout' => 3,
                     'redirection' => 0,
                     'reject_unsafe_urls' => $rejectUnsafeUrls,
                     'headers' => [
