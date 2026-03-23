@@ -3,3 +3,6 @@ vendor/
 composer.lock
 .phpunit.result.cache
 dist/
+default.profraw
+.claude/auto-memory/dirty-files
+CLAUDE.md
