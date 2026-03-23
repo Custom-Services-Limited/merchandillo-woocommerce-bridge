@@ -78,7 +78,7 @@ final class Merchandillo_Order_Payload_Builder implements Merchandillo_Order_Pay
             'tracking_number' => $trackingNumber,
             'courier' => $courier,
             'tracking_url' => $trackingUrl,
-            'order_date' => $dateCreated ? (string) $dateCreated->date('Y-m-d') : gmdate('Y-m-d'),
+            'order_date' => $dateCreated ? (string) $dateCreated->date('Y-m-d H:i:s') : gmdate('Y-m-d H:i:s'),
             'notes' => (string) $order->get_customer_note(),
             'shipping_address' => $this->map_address($shipping),
             'billing_address' => $this->map_address($billing),

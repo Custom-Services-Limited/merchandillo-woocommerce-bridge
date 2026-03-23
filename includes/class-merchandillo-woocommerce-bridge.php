@@ -1260,7 +1260,7 @@ final class Merchandillo_WooCommerce_Bridge
                 if ('' === $remoteDate) {
                     continue;
                 }
-                $localComparable[$key] = $localPayload[$key];
+                $localComparable[$key] = substr($localPayload[$key], 0, 10);
                 $remoteComparable[$key] = substr($remoteDate, 0, 10);
                 continue;
             }
